@@ -223,7 +223,6 @@ export function buildLatestContent({ items, language, server, register }) {
             return compact({
               title: truncate(item.seriesName || item.name, 60),
               subtitle: t.newEpisodes(count),
-              date: item.dateCreated ?? undefined,
               image: artwork ? register(artwork) : undefined,
               links: itemLinks(server, item.seriesId),
             });
@@ -237,7 +236,9 @@ export function buildLatestContent({ items, language, server, register }) {
           return compact({
             title: truncate(item.name, 60),
             subtitle,
-            date: item.dateCreated ?? undefined,
+            // The grid shows the date INSTEAD of the subtitle: only when
+            // there is nothing better to say.
+            date: subtitle ? undefined : (item.dateCreated ?? undefined),
             image: artwork ? register(artwork) : undefined,
             description: item.overview ? truncate(item.overview, 2000) : undefined,
             links: itemLinks(server, item.id),

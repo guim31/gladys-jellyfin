@@ -177,6 +177,22 @@ test('latest_media content is valid, localized and linked over https', () => {
   assert.equal(film.subtitle, '2010');
   assert.equal(film.description, 'Plot.');
   assert.equal(film.links.length, 1);
+  assert.equal(series.date, undefined, 'the grid would show the date instead of the subtitle');
+  assert.equal(film.date, undefined);
+  const undated = buildLatestContent({
+    items: [
+      normalizeItem({
+        Id: 'x',
+        Name: 'No year',
+        Type: 'Movie',
+        DateCreated: '2026-09-27T17:00:00Z',
+      }),
+    ],
+    language: 'en',
+    server: { baseUrl: 'http://nas', kind: 'jellyfin', serverId: 's' },
+    register,
+  });
+  assert.equal(undated.components[0].items[0].date, '2026-09-27T17:00:00Z');
 
   const empty = buildLatestContent({
     items: [],

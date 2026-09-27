@@ -11,7 +11,8 @@
 // Usage:
 //   node tools/fake-player.mjs --url http://192.168.1.20:8096 \
 //     --user admin --password secret [--name "Fake TV"] [--device-id fake-tv] \
-//     [--play <itemId>]
+//     [--client "Jellyfin Android TV"] [--play <itemId>] [--start <seconds>] \
+//     [--paused] [--loop]
 //
 // Interactive commands on stdin: play <itemId> | pause | unpause | stop | quit
 // -----------------------------------------------------------------------------
@@ -27,8 +28,12 @@ const { values: args } = parseArgs({
     user: { type: 'string' },
     password: { type: 'string', default: '' },
     name: { type: 'string', default: 'Fake TV' },
+    client: { type: 'string', default: 'Fake Player' },
     'device-id': { type: 'string', default: 'gladys-fake-player' },
     play: { type: 'string' },
+    start: { type: 'string', default: '0' },
+    paused: { type: 'boolean', default: false },
+    loop: { type: 'boolean', default: false },
   },
 });
 
@@ -45,7 +50,7 @@ let token = null;
 
 function authHeader() {
   const parts = [
-    `Client="Fake Player"`,
+    `Client="${args.client}"`,
     `Device="${args.name}"`,
     `DeviceId="${args['device-id']}"`,
     `Version="1.0.0"`,
@@ -263,15 +268,22 @@ async function main() {
     if (state.item && !state.paused) {
       state.positionTicks += 5 * TICKS_PER_SECOND;
       if (state.item.RunTimeTicks && state.positionTicks >= state.item.RunTimeTicks) {
-        stop().catch(() => {});
-        return;
+        if (args.loop) {
+          state.positionTicks = 0;
+        } else {
+          stop().catch(() => {});
+          return;
+        }
       }
     }
     report('timeupdate').catch((err) => log(`progress failed: ${err.message}`));
   }, 5_000);
 
   if (args.play) {
-    await play(args.play);
+    await play(args.play, Number(args.start) * TICKS_PER_SECOND);
+    if (args.paused) {
+      await handlePlaystate({ Command: 'Pause' });
+    }
   }
 
   const rl = readline.createInterface({ input: process.stdin });
