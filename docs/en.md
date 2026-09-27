@@ -1,38 +1,88 @@
-# Demo Devices Template
+# Jellyfin & Emby
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+Control the players of your **Jellyfin** or **Emby** server from Gladys, see
+what is being watched around the house, and run scenes when playback
+starts, pauses or stops — the classic "dim the lights when the movie
+starts".
+
+Works with Jellyfin 10.9 and later (checked on 10.11 and 12.1) and with Emby
+(checked on 4.10). The integration detects which server it talks to.
+
+## Setup
+
+1. **Create an API key** for Gladys on your server:
+   - Jellyfin: **Dashboard > API Keys > +**, name it "Gladys";
+   - Emby: **Settings > Advanced > API Keys > New API Key**.
+2. In the **Configuration** tab of the integration, fill in:
+   - the **server URL**, port included (for example
+     `http://192.168.1.20:8096`). An https address behind a reverse proxy
+     works too; you may paste the address from your browser, `/web/...` is
+     removed automatically;
+   - the **API key** created in step 1.
+3. Save, then click **Test the connection**.
+4. The devices show up in the **Discovery** tab.
+
+A player (TV app, phone, browser) only shows up while it is **connected** to
+the server: open the app on the TV, then click **Look for players**. A player
+you added stays in Gladys even when it is off.
 
 ## What you get
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+**The server**: number of active playbacks, number of transcoded playbacks
+(the ones that load the CPU), a "who watches what, where" summary, and one
+counter per library (plus episodes for TV shows and tracks for music). The
+counters can be turned off in the configuration.
 
-## Configuration
+**Each player**: play, pause, stop, previous, next, rewind, forward, volume,
+mute, playback state, now playing title, remaining time, and two **"in
+intro"** and **"in credits"** flags. The buttons work with the dashboard
+**Music** widget.
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+The intro and credits flags need the server to know those parts:
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+- Jellyfin (10.10 and later): install a media segment provider, for example the official
+  **Chapter Segments Provider** plugin (it reads chapters named "Intro",
+  "Credits"...) or the **Intro Skipper** plugin;
+- Emby: Emby's intro and credits detection.
 
-## Actions
+Without them, both flags stay at 0.
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+## Scenes
+
+Four triggers: **Playback started**, **Playback paused**, **Playback
+resumed**, **Playback stopped**. Each one can be narrowed to one player and
+to media types (movie, episode, music, live TV...). The `title`, `name`,
+`series_name`, `media_type`, `user` and `player_name` variables are available
+to the following actions.
+
+Example: _Playback started, player "Living room TV", type Movie_ → dim the
+living room; _Playback paused_ on the same player → lights back on.
+
+Two scene actions:
+
+- **Display a message on a player** — for example "Someone is at the door"
+  over the movie;
+- **Play a media on a player** — searches the library for a title (movie,
+  series, album, artist, playlist...) and plays it, shuffled if you like.
+  The title played is available to the rest of the scene.
+
+The player must be connected to the server to receive a message or a media.
+
+## Dashboard widgets
+
+- **Now playing**: who watches what, where, with the posters.
+- **Latest additions**: posters of the movies, series or albums added
+  lately, new episodes grouped by series.
 
 ## Troubleshooting
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- **"The server refused the API key"**: the key was deleted or badly copied.
+  Create a new one and save it. The integration deliberately stops calling
+  the server while the key is refused: a reverse proxy running fail2ban
+  could otherwise ban your address.
+- **A button does nothing**: not every app accepts remote control. TV apps
+  and the web client do; some mobile apps do not.
+- **Updates are slow**: the integration follows playback in real time over a
+  WebSocket. If your reverse proxy does not forward WebSockets, it falls back
+  to polling every 15 seconds.
+- The integration logs can be read from the Gladys interface.
