@@ -4,7 +4,9 @@
 //   - now_playing  : who watches what, where, with the posters (a row per
 //                    playback) and two live tiles bound to the server sensors;
 //   - latest_media : the posters of the latest additions (movies, series,
-//                    albums), new episodes grouped by series.
+//                    albums), new episodes grouped by series;
+//   - player       : ONE player, as a remote: the artwork of what it plays,
+//                    title, state, remaining time and the playback buttons.
 //
 // Posters are served by the integration (the browser never loads a
 // third-party URL): a content only carries image KEYS, resolved through
@@ -15,12 +17,13 @@
 import { WIDGET_COLORS } from '@gladysassistant/integration-sdk';
 import { texts } from './i18n.js';
 import { SERVER_KIND } from './media/api.js';
-import { formatTitle, truncate } from './media/sessions.js';
+import { formatTitle, episodeCode, mediaCategory, MEDIA_TYPE, truncate } from './media/sessions.js';
 
 /** Widget keys, declared in the manifest `widgets` (forever: never rename). */
 export const WIDGET = {
   NOW_PLAYING: 'now_playing',
   LATEST_MEDIA: 'latest_media',
+  PLAYER: 'player',
 };
 
 /** Item types fetched for each `kind` setting of the latest_media widget. */
@@ -35,37 +38,66 @@ const MAX_LIST_ITEMS = 8;
 const MAX_GRID_ITEMS = 12;
 
 /**
- * Artwork of an item: the series poster for an episode, the album cover for
+ * Poster of an item: the series poster for an episode, the album cover for
  * a track, the item's own image otherwise. Null when no image is known.
  * @param {ReturnType<import('./media/sessions.js').normalizeItem>} item
- * @returns {{ itemId: string, tag: string }|null}
+ * @returns {{ itemId: string, tag: string, imageType: 'Primary' }|null}
  */
 export function artworkOf(item) {
   if (!item) {
     return null;
   }
+  const primary = (itemId, tag) => ({ itemId, tag, imageType: 'Primary' });
   if (item.type === 'Episode' && item.seriesId && item.seriesImageTag) {
-    return { itemId: item.seriesId, tag: item.seriesImageTag };
+    return primary(item.seriesId, item.seriesImageTag);
   }
   if (item.albumId && item.albumImageTag) {
-    return { itemId: item.albumId, tag: item.albumImageTag };
+    return primary(item.albumId, item.albumImageTag);
   }
   if (item.imageTag) {
-    return { itemId: item.id, tag: item.imageTag };
+    return primary(item.id, item.imageTag);
+  }
+  return null;
+}
+
+/**
+ * Landscape art for the 16:9 frame of the player widget: the item's fan art,
+ * the series fan art for an episode, or the episode still (a 16:9 screenshot).
+ * Null when none exists — the caller then shows the poster, contained.
+ * @param {ReturnType<import('./media/sessions.js').normalizeItem>} item
+ * @returns {{ itemId: string, tag: string, imageType: 'Backdrop'|'Primary' }|null}
+ */
+export function backdropOf(item) {
+  if (!item) {
+    return null;
+  }
+  if (item.backdropTag) {
+    return { itemId: item.id, tag: item.backdropTag, imageType: 'Backdrop' };
+  }
+  if (item.parentBackdropItemId && item.parentBackdropTag) {
+    return {
+      itemId: item.parentBackdropItemId,
+      tag: item.parentBackdropTag,
+      imageType: 'Backdrop',
+    };
+  }
+  if (item.type === 'Episode' && item.imageTag) {
+    return { itemId: item.id, tag: item.imageTag, imageType: 'Primary' };
   }
   return null;
 }
 
 /**
  * Image key of an artwork (`^[a-z0-9][a-z0-9-]{0,63}$`).
- * @param {{ itemId: string, tag: string }} artwork
+ * @param {{ itemId: string, tag: string, imageType?: string }} artwork
  */
 export function imageKey(artwork) {
   const safe = (value) =>
     String(value)
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '');
-  return `poster-${safe(artwork.itemId).slice(0, 40)}-${safe(artwork.tag).slice(0, 12) || 'x'}`;
+  const prefix = artwork.imageType === 'Backdrop' ? 'backdrop' : 'poster';
+  return `${prefix}-${safe(artwork.itemId).slice(0, 40)}-${safe(artwork.tag).slice(0, 12) || 'x'}`;
 }
 
 /**
@@ -226,4 +258,120 @@ function compact(card) {
       ([, value]) => value !== undefined && !(Array.isArray(value) && value.length === 0),
     ),
   );
+}
+
+/**
+ * Two lines describing an item for the player widget: the main name
+ * (heading, ≤ 40) and what completes it (caption, ≤ 80).
+ * @param {ReturnType<import('./media/sessions.js').normalizeItem>} item
+ */
+export function describeItem(item) {
+  if (item.type === 'Episode' && item.seriesName) {
+    return {
+      heading: item.seriesName,
+      caption: [episodeCode(item), item.name].filter(Boolean).join(' · '),
+    };
+  }
+  if (mediaCategory(item) === MEDIA_TYPE.MUSIC) {
+    return {
+      heading: item.name,
+      caption: [item.artists[0] || item.albumArtist, item.album].filter(Boolean).join(' · '),
+    };
+  }
+  return { heading: item.name, caption: item.year ? String(item.year) : '' };
+}
+
+/**
+ * Content of the player widget: one player, as a remote.
+ * @param {{ session: object|null, playerName: string, featureOf: (key: string) => string,
+ *   language: string, register: (artwork: object) => string }} input
+ *   `featureOf` gives the external id of one of the player's features.
+ */
+export function buildPlayerContent({ session, playerName, featureOf, language, register }) {
+  const t = texts(language);
+  if (!session?.item) {
+    return {
+      ttl_seconds: 60,
+      components: [
+        { type: 'text', variant: 'heading', text: truncate(playerName, 40) },
+        {
+          type: 'text',
+          variant: 'body',
+          text: session ? t.nothingPlaying : t.playerOffline,
+        },
+      ],
+    };
+  }
+  const { item } = session;
+  const { heading, caption } = describeItem(item);
+  const paused = session.state === 'paused';
+  const landscape = backdropOf(item);
+  const poster = artworkOf(item);
+  const components = [{ type: 'text', variant: 'heading', text: truncate(heading, 40) }];
+  if (caption) {
+    components.push({ type: 'text', variant: 'caption', text: truncate(caption, 80) });
+  }
+  components.push({
+    type: 'value',
+    device_feature: featureOf('remaining'),
+    label: t.remaining,
+    icon: 'clock',
+  });
+  if (landscape || poster) {
+    components.push({
+      type: 'image',
+      key: register(landscape ?? poster),
+      alt: truncate(formatTitle(item), 80),
+      // Fan art fills the 16:9 frame; a portrait poster or a square cover is
+      // shown whole.
+      fit: landscape ? 'cover' : 'contain',
+    });
+  }
+  const status = [
+    {
+      label: t.state,
+      value: paused ? t.paused : session.transcoding ? t.transcoding : t.playing,
+      color: paused ? WIDGET_COLORS.WARNING : WIDGET_COLORS.SUCCESS,
+    },
+  ];
+  if (session.userName) {
+    status.push({ label: t.user, value: truncate(session.userName, 40) });
+  }
+  components.push({ type: 'status', items: status });
+  components.push(
+    paused
+      ? {
+          type: 'button',
+          label: t.play,
+          icon: 'play',
+          style: 'primary',
+          device_feature: featureOf('play'),
+          value: 1,
+        }
+      : {
+          type: 'button',
+          label: t.pause,
+          icon: 'pause',
+          style: 'primary',
+          device_feature: featureOf('pause'),
+          value: 1,
+        },
+    {
+      type: 'button',
+      label: t.stop,
+      icon: 'square',
+      style: 'secondary',
+      device_feature: featureOf('stop'),
+      value: 1,
+    },
+    {
+      type: 'button',
+      label: t.next,
+      icon: 'skip-forward',
+      style: 'secondary',
+      device_feature: featureOf('next'),
+      value: 1,
+    },
+  );
+  return { ttl_seconds: 30, components };
 }

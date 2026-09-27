@@ -12,13 +12,13 @@ Checked on real servers: **Jellyfin 10.11.11 and 12.1.0, Emby 4.10.0.40**.
 
 ## Features
 
-| Surface               | What                                                                                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Server device         | Active playbacks, transcoded playbacks, "now playing" summary, one item counter per library (+ episodes / tracks)                                                                          |
-| One device per player | Play / Pause / Stop / Previous / Next / Rewind / Forward, volume, mute (with the state the player reports), playback state (Music widget compatible), title, remaining time, intro/credits |
-| Scene triggers        | `playback_started`, `playback_paused`, `playback_resumed`, `playback_stopped` — filtered by player and media type (movie, episode, music, live TV…)                                        |
-| Scene actions         | `display_message` (a message over the movie: "someone is at the door"), `play_media` (search the library and play the best match, shuffled or not)                                         |
-| Dashboard widgets     | `now_playing` (who watches what, where, with the posters), `latest_media` (poster grid of the latest movies, series or albums)                                                             |
+| Surface               | What                                                                                                                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server device         | Active playbacks, transcoded playbacks, "now playing" summary, one item counter per library (+ episodes / tracks)                                                                                                          |
+| One device per player | Play / Pause / Stop / Previous / Next / Rewind / Forward, volume, mute (with the state the player reports), playback state (Music widget compatible), title, remaining time, intro/credits                                 |
+| Scene triggers        | `playback_started`, `playback_paused`, `playback_resumed`, `playback_stopped` — filtered by player and media type (movie, episode, music, live TV…)                                                                        |
+| Scene actions         | `display_message` (a message over the movie: "someone is at the door"), `play_media` (search the library and play the best match, shuffled or not)                                                                         |
+| Dashboard widgets     | `now_playing` (who watches what, where, with the posters), `player` (one player as a remote: fan art or cover, title, state, remaining time, buttons), `latest_media` (poster grid of the latest movies, series or albums) |
 
 Playback is followed in **real time**: the server's socket pushes the full
 session list within ~1.5 s of any change, and a fallback poll (15 s, or 60 s

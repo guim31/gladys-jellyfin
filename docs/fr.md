@@ -77,6 +77,9 @@ lecture.
 ## Widgets du tableau de bord
 
 - **En cours de lecture** : qui regarde quoi, où, avec les affiches.
+- **Lecteur** : un lecteur en télécommande — la jaquette de ce qu'il lit
+  (ou l'image de fond du film), le titre, l'état, le temps restant, et les
+  boutons lecture/pause, stop et suivant.
 - **Derniers ajouts** : les affiches des films, séries ou albums ajoutés
   récemment, les nouveaux épisodes regroupés par série.
 

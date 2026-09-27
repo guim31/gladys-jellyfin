@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { validateWidgetContent } from '@gladysassistant/integration-sdk';
 import {
   artworkOf,
+  backdropOf,
+  describeItem,
+  buildPlayerContent,
   imageKey,
   itemLinks,
   groupLatestItems,
@@ -10,7 +13,7 @@ import {
   buildLatestContent,
 } from '../src/widgets.js';
 import { normalizeSession, normalizeItem } from '../src/media/sessions.js';
-import { tvSession, phoneEpisodeSession } from './fixtures/sessions.js';
+import { tvSession, phoneEpisodeSession, idleTvSession } from './fixtures/sessions.js';
 
 const IMAGE_KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const register = (artwork) => imageKey(artwork);
@@ -19,16 +22,18 @@ test('artwork: series poster for an episode, album cover for a track, own image 
   assert.deepEqual(artworkOf(normalizeSession(phoneEpisodeSession()).item), {
     itemId: '4def373444fc7a79b4592aed4ffe492e',
     tag: '381ddb4f270478c3d121e95a1d480ece',
+    imageType: 'Primary',
   });
   assert.deepEqual(
     artworkOf(
       normalizeItem({ Id: 't1', Type: 'Audio', AlbumId: 'al1', AlbumPrimaryImageTag: 'tg' }),
     ),
-    { itemId: 'al1', tag: 'tg' },
+    { itemId: 'al1', tag: 'tg', imageType: 'Primary' },
   );
   assert.deepEqual(artworkOf(normalizeSession(tvSession()).item), {
     itemId: '0c19a6f54d50d8bbbba00f8f4325de45',
     tag: '8280d87905731335f4956a7af5054441',
+    imageType: 'Primary',
   });
   assert.equal(artworkOf(normalizeItem({ Id: 'x', Type: 'Movie' })), null);
   assert.equal(artworkOf(null), null);
@@ -181,4 +186,124 @@ test('latest_media content is valid, localized and linked over https', () => {
   });
   assert.deepEqual(validateWidgetContent(empty), []);
   assert.equal(empty.components[0].text, 'Nothing added recently.');
+});
+
+test('backdrop: own fan art, series fan art, episode still, else nothing', () => {
+  assert.deepEqual(
+    backdropOf(normalizeItem({ Id: 'm', Type: 'Movie', BackdropImageTags: ['bd'] })),
+    {
+      itemId: 'm',
+      tag: 'bd',
+      imageType: 'Backdrop',
+    },
+  );
+  assert.deepEqual(
+    backdropOf(
+      normalizeItem({
+        Id: 'e',
+        Type: 'Episode',
+        ParentBackdropItemId: 's',
+        ParentBackdropImageTags: ['sbd'],
+        ImageTags: { Primary: 'still' },
+      }),
+    ),
+    { itemId: 's', tag: 'sbd', imageType: 'Backdrop' },
+  );
+  assert.deepEqual(
+    backdropOf(normalizeItem({ Id: 'e', Type: 'Episode', ImageTags: { Primary: 'still' } })),
+    { itemId: 'e', tag: 'still', imageType: 'Primary' },
+  );
+  assert.equal(
+    backdropOf(normalizeItem({ Id: 't', Type: 'Audio', ImageTags: { Primary: 'c' } })),
+    null,
+  );
+  assert.match(imageKey({ itemId: 'm', tag: 'bd', imageType: 'Backdrop' }), /^backdrop-m-bd$/);
+});
+
+test('describeItem: heading and caption per media kind', () => {
+  assert.deepEqual(describeItem(normalizeSession(phoneEpisodeSession()).item), {
+    heading: 'Pioneer One',
+    caption: 'S01E02 · Earthfall',
+  });
+  assert.deepEqual(
+    describeItem(
+      normalizeItem({
+        Id: 't',
+        Name: 'La',
+        Type: 'Audio',
+        Artists: ['Test Artist'],
+        Album: 'Test Album',
+      }),
+    ),
+    { heading: 'La', caption: 'Test Artist · Test Album' },
+  );
+  assert.deepEqual(describeItem(normalizeSession(tvSession()).item), {
+    heading: 'Big Buck Bunny',
+    caption: '2008',
+  });
+});
+
+const featureOf = (key) => `ext:x:player:p:${key}`;
+
+test('player widget: fits the content budget exactly, pause button while playing', () => {
+  const session = normalizeSession(
+    tvSession({
+      NowPlayingItem: { ...tvSession().NowPlayingItem, BackdropImageTags: ['bd'] },
+    }),
+  );
+  const content = buildPlayerContent({
+    session,
+    playerName: 'TV',
+    featureOf,
+    language: 'fr',
+    register,
+  });
+  assert.deepEqual(validateWidgetContent(content), [], 'nothing dropped by the core');
+  assert.equal(content.components.length, 8);
+  const image = content.components.find((c) => c.type === 'image');
+  assert.equal(image.fit, 'cover');
+  assert.match(image.key, /^backdrop-/);
+  const buttons = content.components.filter((c) => c.type === 'button');
+  assert.deepEqual(
+    buttons.map((b) => [b.icon, b.device_feature]),
+    [
+      ['pause', featureOf('pause')],
+      ['square', featureOf('stop')],
+      ['skip-forward', featureOf('next')],
+    ],
+  );
+  const tile = content.components.find((c) => c.type === 'value');
+  assert.equal(tile.device_feature, featureOf('remaining'));
+});
+
+test('player widget: play button while paused, idle and offline states', () => {
+  const paused = buildPlayerContent({
+    session: normalizeSession(phoneEpisodeSession()),
+    playerName: 'Pixel',
+    featureOf,
+    language: 'en',
+    register,
+  });
+  assert.deepEqual(validateWidgetContent(paused), []);
+  assert.ok(paused.components.some((c) => c.type === 'button' && c.icon === 'play'));
+  assert.equal(paused.components.find((c) => c.type === 'status').items[0].value, 'Paused');
+
+  const idle = buildPlayerContent({
+    session: normalizeSession(idleTvSession()),
+    playerName: 'TV',
+    featureOf,
+    language: 'en',
+    register,
+  });
+  assert.deepEqual(validateWidgetContent(idle), []);
+  assert.equal(idle.components[1].text, 'Nothing is playing right now.');
+
+  const offline = buildPlayerContent({
+    session: null,
+    playerName: 'TV',
+    featureOf,
+    language: 'en',
+    register,
+  });
+  assert.equal(offline.components[1].text, 'This player is not connected to the server.');
 });

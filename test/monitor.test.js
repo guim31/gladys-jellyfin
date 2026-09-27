@@ -5,6 +5,7 @@ import { MediaMonitor, pickBestMatch, foldTitle } from '../src/monitor.js';
 import { normalizeConfig } from '../src/config.js';
 import { normalizeItem, playerKey } from '../src/media/sessions.js';
 import { AuthError } from '../src/media/api.js';
+import { validateWidgetContent } from '@gladysassistant/integration-sdk';
 import {
   tvSession,
   idleTvSession,
@@ -54,8 +55,8 @@ function createMonitor({ sessions = [tvSession()], configOverrides = {} } = {}) 
       return fake.search;
     },
     getLatestItems: async () => [],
-    getPrimaryImage: async (itemId, width) => {
-      calls.push(['image', itemId, width]);
+    getImage: async (itemId, imageType, width) => {
+      calls.push(['image', itemId, width, imageType]);
       return fake.images[width] ?? null;
     },
     sendPlaystate: async (sessionId, command) => calls.push(['playstate', sessionId, command]),
@@ -319,10 +320,32 @@ test('widget images: registered keys only, shrunk until they fit', async () => {
   const b64 = await monitor.widgetImage(key);
   assert.deepEqual([...Buffer.from(b64, 'base64')], [0xff, 0xd8, 0xff]);
   assert.deepEqual(
-    calls.filter((c) => c[0] === 'image').map((c) => c[2]),
-    [300, 210],
+    calls.filter((c) => c[0] === 'image').map((c) => [c[2], c[3]]),
+    [
+      [300, 'Primary'],
+      [210, 'Primary'],
+    ],
   );
   await assert.rejects(monitor.widgetImage('poster-unknown-x'), /Unknown image/);
+});
+
+test('player widget: the chosen player as a remote, the overview for the server', async () => {
+  const { monitor } = createMonitor();
+  await monitor.init();
+  const content = monitor.playerContent('fr', TV);
+  assert.deepEqual(validateWidgetContent(content), []);
+  assert.equal(content.components[0].text, 'Big Buck Bunny');
+  const pause = content.components.find((c) => c.type === 'button' && c.icon === 'pause');
+  assert.equal(pause.device_feature, `${TV}:pause`);
+  const image = content.components.find((c) => c.type === 'image');
+  assert.match(image.key, /^poster-/);
+  assert.equal(image.fit, 'contain', 'a portrait poster is shown whole');
+
+  const overview = monitor.playerContent('fr', 'ext:jellyfin:server:srv1');
+  assert.ok(overview.components.some((c) => c.type === 'card-list'));
+  monitor.sessions.clear();
+  const offline = monitor.playerContent('fr', TV);
+  assert.equal(offline.components[1].text, "Ce lecteur n'est pas connecté au serveur.");
 });
 
 test('normalizeItem tolerates partial items', () => {

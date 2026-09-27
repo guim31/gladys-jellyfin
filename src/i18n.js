@@ -40,6 +40,9 @@ const TEXTS = {
     series: 'Series',
     album: 'Album',
     on: 'on',
+    state: 'State',
+    user: 'User',
+    playerOffline: 'This player is not connected to the server.',
   },
   fr: {
     play: 'Lecture',
@@ -71,6 +74,9 @@ const TEXTS = {
     series: 'Série',
     album: 'Album',
     on: 'sur',
+    state: 'État',
+    user: 'Utilisateur',
+    playerOffline: "Ce lecteur n'est pas connecté au serveur.",
   },
 };
 

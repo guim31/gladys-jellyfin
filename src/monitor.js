@@ -12,7 +12,8 @@
 //   - refreshLibraries() : poll the library item counts;
 //   - handleSetValue()   : run a user command on a player;
 //   - displayMessage() / playMedia() : the scene actions;
-//   - nowPlayingContent() / latestContent() / widgetImage() : the widgets.
+//   - nowPlayingContent() / latestContent() / playerContent() / widgetImage() :
+//                          the widgets.
 //
 // States are deduplicated before publishing: the socket pushes the full
 // session list every time anything changes, most values are unchanged.
@@ -53,6 +54,7 @@ import {
   LATEST_KINDS,
   buildNowPlayingContent,
   buildLatestContent,
+  buildPlayerContent,
   imageKey,
 } from './widgets.js';
 import { texts } from './i18n.js';
@@ -63,9 +65,10 @@ const logger = createLogger({ name: 'media-monitor' });
 const MARKER_ITEM_TYPES = new Set(['Movie', 'Episode']);
 const MARKER_CACHE_MAX_ENTRIES = 100;
 
-// Poster width requested from the server: a list thumbnail or a grid poster
-// renders under 300 px, and the core refuses anything over 300 KB.
-const POSTER_WIDTH = 300;
+// Width requested from the server: a list thumbnail or a grid poster renders
+// under 300 px, the 16:9 frame of the player widget under 800 px; the core
+// refuses anything over 300 KB.
+const IMAGE_WIDTH = { Primary: 300, Backdrop: 800 };
 const MAX_WIDGET_IMAGE_BYTES = 300 * 1024;
 const MAX_REGISTERED_IMAGES = 200;
 
@@ -297,6 +300,7 @@ export class MediaMonitor {
       });
     }
     this.requestWidgetRefresh(WIDGET.NOW_PLAYING);
+    this.requestWidgetRefresh(WIDGET.PLAYER);
   }
 
   /** Ask the dashboards to re-pull a widget now (never fatal). */
@@ -471,6 +475,28 @@ export class MediaMonitor {
   }
 
   /**
+   * Content of the player widget.
+   * @param {string} language
+   * @param {string} [deviceExternalId] - `player` setting of the widget instance.
+   */
+  playerContent(language, deviceExternalId) {
+    const key = extractPlayerKey(deviceExternalId ?? '');
+    const player = key ? this.players.get(key) : null;
+    if (!player) {
+      // The server device (or nothing) was picked: show the overview.
+      return this.nowPlayingContent(language);
+    }
+    const ids = playerExternalIds(this.gladys, key);
+    return buildPlayerContent({
+      session: this.sessions.get(key) ?? null,
+      playerName: playerDeviceName(this.server.kind, player),
+      featureOf: (featureKey) => ids.feature(featureKey),
+      language,
+      register: (artwork) => this.registerArtwork(artwork),
+    });
+  }
+
+  /**
    * Content of the latest_media widget.
    * @param {string} language
    * @param {string} [kind] - `kind` setting of the widget instance.
@@ -497,9 +523,9 @@ export class MediaMonitor {
     if (!artwork) {
       throw new Error(`Unknown image ${key}`);
     }
-    let width = POSTER_WIDTH;
+    let width = IMAGE_WIDTH[artwork.imageType] ?? IMAGE_WIDTH.Primary;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const bytes = await this.api.getPrimaryImage(artwork.itemId, width);
+      const bytes = await this.api.getImage(artwork.itemId, artwork.imageType, width);
       if (!bytes) {
         throw new Error(`No artwork for ${artwork.itemId}`);
       }

@@ -159,6 +159,30 @@
       "icon": "play-circle"
     },
     {
+      "key": "player",
+      "label": {
+        "en": "Player",
+        "fr": "Lecteur"
+      },
+      "description": {
+        "en": "One player as a remote: artwork, title, remaining time, buttons.",
+        "fr": "Un lecteur en télécommande : jaquette, titre, temps restant, boutons."
+      },
+      "icon": "tv",
+      "settings": [
+        {
+          "key": "player",
+          "type": "select",
+          "source": "devices",
+          "label": {
+            "en": "Player",
+            "fr": "Lecteur"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
       "key": "latest_media",
       "label": {
         "en": "Latest additions",

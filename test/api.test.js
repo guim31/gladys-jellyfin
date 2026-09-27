@@ -173,14 +173,18 @@ test('remote control: playstate, general command, message, play', async () => {
   assert.equal(requests[3].query.get('itemIds'), 'i1,i2');
 });
 
-test('getPrimaryImage: bytes, or null when the item has no image', async () => {
-  routes = { 'GET /Items/i1/Images/Primary': { bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0]) } };
+test('getImage: poster or fan art, bytes or null when the item has none', async () => {
+  routes = {
+    'GET /Items/i1/Images/Primary': { bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0]) },
+    'GET /Items/i1/Images/Backdrop/0': { bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe1]) },
+  };
   const client = api();
-  const bytes = await client.getPrimaryImage('i1', 300);
+  const bytes = await client.getImage('i1', 'Primary', 300);
   assert.deepEqual([...bytes], [0xff, 0xd8, 0xff, 0xe0]);
   assert.equal(requests[0].query.get('maxWidth'), '300');
   assert.equal(requests[0].query.get('format'), 'Jpg');
-  assert.equal(await client.getPrimaryImage('missing', 300), null);
+  assert.deepEqual([...(await client.getImage('i1', 'Backdrop', 800))], [0xff, 0xd8, 0xff, 0xe1]);
+  assert.equal(await client.getImage('missing', 'Primary', 300), null);
 });
 
 test('getMarkers: media segments on Jellyfin, chapter markers on Emby', async () => {

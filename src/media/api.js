@@ -249,18 +249,19 @@ export class MediaServerApi {
   }
 
   /**
-   * Primary image of an item, resized server-side to fit a widget.
+   * Image of an item, resized server-side to fit a widget.
    * @param {string} itemId
+   * @param {'Primary'|'Backdrop'} imageType - Poster / cover, or 16:9 fan art.
    * @param {number} maxWidth
-   * @returns {Promise<Buffer|null>} JPEG bytes, or null when the item has no image.
+   * @returns {Promise<Buffer|null>} JPEG bytes, or null when the item has no such image.
    */
-  async getPrimaryImage(itemId, maxWidth) {
+  async getImage(itemId, imageType, maxWidth) {
+    const path = `/Items/${encodeURIComponent(itemId)}/Images/${imageType}${imageType === 'Backdrop' ? '/0' : ''}`;
     try {
-      const { bytes } = await this.request(
-        'GET',
-        `/Items/${encodeURIComponent(itemId)}/Images/Primary`,
-        { query: { maxWidth, quality: 80, format: 'Jpg' }, binary: true },
-      );
+      const { bytes } = await this.request('GET', path, {
+        query: { maxWidth, quality: 80, format: 'Jpg' },
+        binary: true,
+      });
       return bytes;
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
