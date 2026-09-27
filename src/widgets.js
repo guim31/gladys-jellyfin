@@ -285,11 +285,26 @@ export function describeItem(item) {
 /**
  * Content of the player widget: one player, as a remote.
  * @param {{ session: object|null, playerName: string, featureOf: (key: string) => string,
- *   language: string, register: (artwork: object) => string }} input
- *   `featureOf` gives the external id of one of the player's features.
+ *   language: string, register: (artwork: object) => string, followed?: boolean }} input
+ *   `featureOf` gives the external id of one of the player's features;
+ *   `followed` is set when no player was picked and the widget follows the
+ *   current playback.
  */
-export function buildPlayerContent({ session, playerName, featureOf, language, register }) {
+export function buildPlayerContent({
+  session,
+  playerName,
+  featureOf,
+  language,
+  register,
+  followed = false,
+}) {
   const t = texts(language);
+  if (followed && !session?.item) {
+    return {
+      ttl_seconds: 60,
+      components: [{ type: 'text', variant: 'body', text: t.nothingPlaying }],
+    };
+  }
   if (!session?.item) {
     return {
       ttl_seconds: 60,
@@ -337,6 +352,10 @@ export function buildPlayerContent({ session, playerName, featureOf, language, r
   ];
   if (session.userName) {
     status.push({ label: t.user, value: truncate(session.userName, 40) });
+  }
+  if (followed) {
+    // No player picked: the widget follows whatever plays, so say where.
+    status.push({ label: t.player, value: truncate(session.deviceName, 40) });
   }
   components.push({ type: 'status', items: status });
   components.push(

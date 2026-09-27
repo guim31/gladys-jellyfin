@@ -329,7 +329,7 @@ test('widget images: registered keys only, shrunk until they fit', async () => {
   await assert.rejects(monitor.widgetImage('poster-unknown-x'), /Unknown image/);
 });
 
-test('player widget: the chosen player as a remote, the overview for the server', async () => {
+test('player widget: the chosen player as a remote', async () => {
   const { monitor } = createMonitor();
   await monitor.init();
   const content = monitor.playerContent('fr', TV);
@@ -340,12 +340,44 @@ test('player widget: the chosen player as a remote, the overview for the server'
   const image = content.components.find((c) => c.type === 'image');
   assert.match(image.key, /^poster-/);
   assert.equal(image.fit, 'contain', 'a portrait poster is shown whole');
+  const status = content.components.find((c) => c.type === 'status');
+  assert.ok(!status.items.some((i) => i.label === 'Lecteur'), 'the player is known: no row');
 
-  const overview = monitor.playerContent('fr', 'ext:jellyfin:server:srv1');
-  assert.ok(overview.components.some((c) => c.type === 'card-list'));
   monitor.sessions.clear();
   const offline = monitor.playerContent('fr', TV);
   assert.equal(offline.components[1].text, "Ce lecteur n'est pas connecté au serveur.");
+});
+
+test('player widget without a player (or with the server): follows the playback', async () => {
+  const { monitor } = createMonitor({
+    sessions: [phoneEpisodeSession(), tvSession()],
+  });
+  await monitor.init();
+  for (const setting of [undefined, '', 'ext:jellyfin:server:srv1']) {
+    const content = monitor.playerContent('fr', setting);
+    assert.deepEqual(validateWidgetContent(content), []);
+    // The paused phone comes first, but a playing session wins.
+    assert.equal(content.components[0].text, 'Big Buck Bunny');
+    const status = content.components.find((c) => c.type === 'status');
+    assert.deepEqual(status.items.at(-1), { label: 'Lecteur', value: 'Living room TV' });
+    const pause = content.components.find((c) => c.type === 'button' && c.icon === 'pause');
+    assert.equal(pause.device_feature, `${TV}:pause`);
+  }
+  monitor.sessions.clear();
+  const idle = monitor.playerContent('fr', undefined);
+  assert.deepEqual(idle.components, [
+    { type: 'text', variant: 'body', text: "Rien n'est en cours de lecture." },
+  ]);
+});
+
+test('player widget: a player created in Gladys but not seen yet keeps its name', async () => {
+  const { gladys, monitor } = createMonitor({ sessions: [] });
+  const bedroom = 'ext:jellyfin:player:0123456789abcdef';
+  gladys.devices = [{ external_id: bedroom, name: 'Jellyfin - Chambre' }];
+  await monitor.init();
+  const content = monitor.playerContent('fr', bedroom);
+  assert.equal(content.components[0].text, 'Jellyfin - Chambre');
+  assert.equal(content.components[1].text, "Ce lecteur n'est pas connecté au serveur.");
 });
 
 test('normalizeItem tolerates partial items', () => {

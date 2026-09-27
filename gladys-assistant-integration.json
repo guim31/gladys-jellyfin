@@ -165,8 +165,8 @@
         "fr": "Lecteur"
       },
       "description": {
-        "en": "One player as a remote: artwork, title, remaining time, buttons.",
-        "fr": "Un lecteur en télécommande : jaquette, titre, temps restant, boutons."
+        "en": "The current playback as a remote: artwork, title, remaining time, buttons.",
+        "fr": "La lecture en cours en télécommande : jaquette, titre, temps restant, boutons."
       },
       "icon": "tv",
       "settings": [
@@ -178,7 +178,11 @@
             "en": "Player",
             "fr": "Lecteur"
           },
-          "required": true
+          "description": {
+            "en": "Leave empty to follow whatever is playing.",
+            "fr": "Laissez vide pour suivre ce qui est en cours de lecture."
+          },
+          "required": false
         }
       ]
     },

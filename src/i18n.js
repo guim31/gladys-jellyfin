@@ -42,6 +42,7 @@ const TEXTS = {
     on: 'on',
     state: 'State',
     user: 'User',
+    player: 'Player',
     playerOffline: 'This player is not connected to the server.',
   },
   fr: {
@@ -76,6 +77,7 @@ const TEXTS = {
     on: 'sur',
     state: 'État',
     user: 'Utilisateur',
+    player: 'Lecteur',
     playerOffline: "Ce lecteur n'est pas connecté au serveur.",
   },
 };

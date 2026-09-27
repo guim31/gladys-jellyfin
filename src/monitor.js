@@ -481,18 +481,42 @@ export class MediaMonitor {
    */
   playerContent(language, deviceExternalId) {
     const key = extractPlayerKey(deviceExternalId ?? '');
-    const player = key ? this.players.get(key) : null;
-    if (!player) {
-      // The server device (or nothing) was picked: show the overview.
-      return this.nowPlayingContent(language);
+    if (!key) {
+      // No player picked (or the server device): follow the current playback.
+      return this.followedPlaybackContent(language);
     }
+    const player = this.players.get(key);
     const ids = playerExternalIds(this.gladys, key);
     return buildPlayerContent({
       session: this.sessions.get(key) ?? null,
-      playerName: playerDeviceName(this.server.kind, player),
+      // A player created in Gladys but not seen since the integration
+      // started: its Gladys name.
+      playerName: player
+        ? playerDeviceName(this.server.kind, player)
+        : (this.gladys.devices?.find((d) => d.external_id === deviceExternalId)?.name ??
+          this.label),
       featureOf: (featureKey) => ids.feature(featureKey),
       language,
       register: (artwork) => this.registerArtwork(artwork),
+    });
+  }
+
+  /**
+   * Player widget without a picked player: the remote of the current
+   * playback — the first one playing, else the first one paused.
+   * @param {string} language
+   */
+  followedPlaybackContent(language) {
+    const active = [...this.sessions.values()].filter((session) => session.item);
+    const session = active.find((s) => s.state === 'playing') ?? active[0] ?? null;
+    const ids = session ? playerExternalIds(this.gladys, session.key) : null;
+    return buildPlayerContent({
+      session,
+      playerName: '',
+      featureOf: (featureKey) => ids.feature(featureKey),
+      language,
+      register: (artwork) => this.registerArtwork(artwork),
+      followed: true,
     });
   }
 
