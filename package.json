@@ -1,6 +1,6 @@
 {
   "name": "gladys-jellyfin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Jellyfin & Emby integration for Gladys Assistant: remote control, now playing, scene triggers and dashboard widgets.",
   "type": "module",
