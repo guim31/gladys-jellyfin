@@ -211,6 +211,19 @@ export class MediaServerApi {
   }
 
   /**
+   * Episodes of a series, in watching order.
+   * @param {string} seriesId
+   * @param {{ startItemId?: string, limit?: number }} [range] - From an episode
+   *   (included), and how many.
+   */
+  async getEpisodes(seriesId, { startItemId, limit } = {}) {
+    const data = await this.request('GET', `/Shows/${encodeURIComponent(seriesId)}/Episodes`, {
+      query: { StartItemId: startItemId, Limit: limit, EnableImages: false, EnableUserData: false },
+    });
+    return data?.Items ?? [];
+  }
+
+  /**
    * Most recently added items.
    * @param {string[]} types - Item types (Movie, Episode, MusicAlbum...).
    * @param {number} limit

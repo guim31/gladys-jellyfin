@@ -184,7 +184,8 @@
           },
           "required": false
         }
-      ]
+      ],
+      "action_timeout_seconds": 15
     },
     {
       "key": "latest_media",
@@ -803,8 +804,8 @@
         "fr": "Afficher un message sur un lecteur"
       },
       "description": {
-        "en": "Shows a message over what is playing (TV apps, web client). The player must be connected.",
-        "fr": "Affiche un message par-dessus la lecture (applis TV, client web). Le lecteur doit être connecté."
+        "en": "Shows a message over what is playing. Depends on the app: Jellyfin Web and Android TV show it, Swiftfin (Apple TV, iOS) does not yet. The player must be connected.",
+        "fr": "Affiche un message par-dessus la lecture. Dépend de l'application : Jellyfin Web et Android TV l'affichent, Swiftfin (Apple TV, iOS) pas encore. Le lecteur doit être connecté."
       },
       "timeout_seconds": 10,
       "fields": [

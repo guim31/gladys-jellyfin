@@ -72,6 +72,13 @@ const IMAGE_WIDTH = { Primary: 300, Backdrop: 800 };
 const MAX_WIDGET_IMAGE_BYTES = 300 * 1024;
 const MAX_REGISTERED_IMAGES = 200;
 
+// How long the state expected after a command stands in for the reported one:
+// the apps report a pause or a stop several seconds late (~5 s for Swiftfin).
+const EXPECTED_STATE_MS = 10_000;
+
+/** Commands the player widget buttons send (widget actions). */
+export const WIDGET_ACTIONS = ['play', 'pause', 'stop', 'next'];
+
 /** Item types searched by the play_media scene action, per `media_type` field. */
 export const PLAY_MEDIA_TYPES = {
   any: ['Movie', 'Series', 'MusicAlbum', 'Playlist', 'MusicArtist', 'Episode', 'Audio'],
@@ -111,6 +118,8 @@ export class MediaMonitor {
     /** @type {Map<string, { itemId: string, tag: string }>} Artwork by widget image key. */
     this.artworks = new Map();
     this.refreshTimer = null;
+    /** @type {Map<string, { state: string, until: number }>} State expected after a command, by player key. */
+    this.expected = new Map();
     // Session lists are processed one at a time: a poll and a socket push
     // arriving together must not interleave (duplicate scene events).
     this.queue = Promise.resolve();
@@ -200,7 +209,7 @@ export class MediaMonitor {
 
     for (const player of this.players.values()) {
       const ids = playerExternalIds(this.gladys, player.key);
-      const session = this.sessions.get(player.key);
+      const session = this.effective(player.key);
       const item = session?.item ?? null;
       const markers = item ? await this.getMarkers(item) : [];
       const position = session?.positionTicks ?? 0;
@@ -238,7 +247,9 @@ export class MediaMonitor {
     }
 
     const serverIds = serverExternalIds(this.gladys, this.server.id);
-    const active = sessions.filter((session) => session.item);
+    const active = sessions
+      .map((session) => this.effective(session.key) ?? session)
+      .filter((session) => session.item);
     this.collectIfChanged(states, serverIds.feature(SERVER_FEATURE.ACTIVE_STREAMS), active.length);
     this.collectIfChanged(
       states,
@@ -372,29 +383,132 @@ export class MediaMonitor {
     const session = this.sessionOf(device.external_id);
     const ids = playerExternalIds(this.gladys, session.key);
     const key = playerFeatureKey(feature.external_id, ids);
+    await this.command(session, key, value);
+  }
 
+  /**
+   * A button of the player widget (a widget action): the same commands as the
+   * device features. Resolving makes the core refetch the widget at once,
+   * which then shows the state expected after the command.
+   * @param {string} actionKey - One of WIDGET_ACTIONS.
+   * @param {{ player?: string }} params - Declared in the content: the player device.
+   */
+  async widgetAction(actionKey, params) {
+    if (!WIDGET_ACTIONS.includes(actionKey)) {
+      throw new Error(`Unknown widget action ${actionKey}`);
+    }
+    await this.command(this.sessionOf(params?.player ?? ''), actionKey, 1);
+  }
+
+  /**
+   * Run one command on a player session.
+   * @param {object} session - Normalized session of the player.
+   * @param {string} key - Feature key (PLAYER_FEATURE).
+   * @param {number} value
+   */
+  async command(session, key, value) {
+    const ids = playerExternalIds(this.gladys, session.key);
     if (key === PLAYER_FEATURE.PLAY) {
       await this.api.sendPlaystate(session.sessionId, 'Unpause');
+      this.expect(session.key, 'playing');
+    } else if (key === PLAYER_FEATURE.PAUSE) {
+      await this.api.sendPlaystate(session.sessionId, 'Pause');
+      this.expect(session.key, 'paused');
+    } else if (key === PLAYER_FEATURE.STOP) {
+      await this.api.sendPlaystate(session.sessionId, 'Stop');
+      this.expect(session.key, 'idle');
+    } else if (
+      (key === PLAYER_FEATURE.NEXT || key === PLAYER_FEATURE.PREVIOUS) &&
+      (await this.playNeighbourEpisode(session, key === PLAYER_FEATURE.NEXT ? 1 : -1))
+    ) {
+      // Done: the neighbour episode was sent as a play command.
     } else if (PLAYER_PLAYSTATE_COMMANDS[key]) {
       await this.api.sendPlaystate(session.sessionId, PLAYER_PLAYSTATE_COMMANDS[key]);
     } else if (key === PLAYER_FEATURE.VOLUME) {
       const volume = Math.max(0, Math.min(100, Math.round(Number(value))));
       await this.api.sendGeneralCommand(session.sessionId, 'SetVolume', { Volume: String(volume) });
-      await this.publishNow(feature.external_id, volume);
+      await this.publishNow(ids.feature(key), volume);
     } else if (key === PLAYER_FEATURE.MUTE) {
       // Gladys renders mute as a push button (it always sends 1): the feature
       // behaves as a TOGGLE of the state the player reports.
       const muted = !session.muted;
       await this.api.sendGeneralCommand(session.sessionId, muted ? 'Mute' : 'Unmute');
-      await this.publishNow(feature.external_id, muted ? 1 : 0);
+      await this.publishNow(ids.feature(key), muted ? 1 : 0);
     } else {
-      throw new Error(`No command handler for ${feature.external_id}`);
+      throw new Error(`No command handler for ${ids.feature(key)}`);
     }
     logger.info(`Command ${key} sent to ${session.deviceName}`);
 
-    // The socket pushes the new state within ~1.5 s; the refresh covers a
-    // server whose socket is down.
+    // The socket pushes the new state as soon as the app reports it; the
+    // refresh covers a server whose socket is down.
     this.scheduleSessionRefresh(1_500);
+  }
+
+  /**
+   * Next / previous on an episode: ask the server for the neighbour episode
+   * and play it. The apps only honor NextTrack with a play queue (Swiftfin,
+   * Android TV), which an episode started on its own does not have.
+   * @param {object} session
+   * @param {1|-1} step
+   * @returns {Promise<boolean>} False when not an episode or no neighbour:
+   *   the caller then sends the plain playstate command.
+   */
+  async playNeighbourEpisode(session, step) {
+    const item = session.item;
+    if (item?.type !== 'Episode' || !item.seriesId) {
+      return false;
+    }
+    let target;
+    if (step > 0) {
+      const [current, next] = await this.api.getEpisodes(item.seriesId, {
+        startItemId: item.id,
+        limit: 2,
+      });
+      target = current && String(current.Id) === item.id ? next : null;
+    } else {
+      const episodes = await this.api.getEpisodes(item.seriesId);
+      const index = episodes.findIndex((episode) => String(episode.Id) === item.id);
+      target = index > 0 ? episodes[index - 1] : null;
+    }
+    if (!target) {
+      return false;
+    }
+    await this.api.playItems(session.sessionId, [String(target.Id)], 'PlayNow');
+    return true;
+  }
+
+  /**
+   * Remember the state a command should lead to, and show it right away (the
+   * sensors now, the widgets on their next fetch).
+   * @param {string} key - Player key.
+   * @param {'playing'|'paused'|'idle'} state
+   */
+  expect(key, state) {
+    this.expected.set(key, { state, until: Date.now() + EXPECTED_STATE_MS });
+    const run = this.queue.then(() => this.publishPlaybackStates([...this.sessions.values()]));
+    this.queue = run.catch(() => {});
+  }
+
+  /**
+   * A player's session as the sensors and widgets show it: the state expected
+   * after a command, until the player confirms it or the delay runs out.
+   * @param {string} key - Player key.
+   * @returns {object|null}
+   */
+  effective(key) {
+    const session = this.sessions.get(key) ?? null;
+    const expected = this.expected.get(key);
+    if (!expected) {
+      return session;
+    }
+    if (!session || Date.now() > expected.until || session.state === expected.state) {
+      this.expected.delete(key);
+      return session;
+    }
+    if (expected.state === 'idle') {
+      return { ...session, item: null, state: 'idle' };
+    }
+    return session.item ? { ...session, state: expected.state } : session;
   }
 
   /**
@@ -466,7 +580,7 @@ export class MediaMonitor {
   nowPlayingContent(language) {
     const serverIds = serverExternalIds(this.gladys, this.server.id);
     return buildNowPlayingContent({
-      sessions: [...this.sessions.values()],
+      sessions: [...this.sessions.keys()].map((key) => this.effective(key)),
       streamsFeature: serverIds.feature(SERVER_FEATURE.ACTIVE_STREAMS),
       transcodesFeature: serverIds.feature(SERVER_FEATURE.TRANSCODE_SESSIONS),
       language,
@@ -488,7 +602,8 @@ export class MediaMonitor {
     const player = this.players.get(key);
     const ids = playerExternalIds(this.gladys, key);
     return buildPlayerContent({
-      session: this.sessions.get(key) ?? null,
+      session: this.effective(key),
+      playerId: ids.device,
       // A player created in Gladys but not seen since the integration
       // started: its Gladys name.
       playerName: player
@@ -507,11 +622,14 @@ export class MediaMonitor {
    * @param {string} language
    */
   followedPlaybackContent(language) {
-    const active = [...this.sessions.values()].filter((session) => session.item);
+    const active = [...this.sessions.keys()]
+      .map((key) => this.effective(key))
+      .filter((session) => session?.item);
     const session = active.find((s) => s.state === 'playing') ?? active[0] ?? null;
     const ids = session ? playerExternalIds(this.gladys, session.key) : null;
     return buildPlayerContent({
       session,
+      playerId: ids?.device,
       playerName: '',
       featureOf: (featureKey) => ids.feature(featureKey),
       language,

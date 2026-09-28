@@ -260,6 +260,7 @@ test('describeItem: heading and caption per media kind', () => {
 });
 
 const featureOf = (key) => `ext:x:player:p:${key}`;
+const playerId = 'ext:x:player:p';
 
 test('player widget: fits the content budget exactly, pause button while playing', () => {
   const session = normalizeSession(
@@ -269,6 +270,7 @@ test('player widget: fits the content budget exactly, pause button while playing
   );
   const content = buildPlayerContent({
     session,
+    playerId,
     playerName: 'TV',
     featureOf,
     language: 'fr',
@@ -281,12 +283,16 @@ test('player widget: fits the content budget exactly, pause button while playing
   assert.match(image.key, /^backdrop-/);
   const buttons = content.components.filter((c) => c.type === 'button');
   assert.deepEqual(
-    buttons.map((b) => [b.icon, b.device_feature]),
+    buttons.map((b) => [b.icon, b.action.key, b.action.params.player]),
     [
-      ['pause', featureOf('pause')],
-      ['square', featureOf('stop')],
-      ['skip-forward', featureOf('next')],
+      ['pause', 'pause', 'ext:x:player:p'],
+      ['square', 'stop', 'ext:x:player:p'],
+      ['skip-forward', 'next', 'ext:x:player:p'],
     ],
+  );
+  assert.ok(
+    buttons.every((b) => b.device_feature === undefined),
+    'widget actions only',
   );
   const tile = content.components.find((c) => c.type === 'value');
   assert.equal(tile.device_feature, featureOf('remaining'));
@@ -295,6 +301,7 @@ test('player widget: fits the content budget exactly, pause button while playing
 test('player widget: play button while paused, idle and offline states', () => {
   const paused = buildPlayerContent({
     session: normalizeSession(phoneEpisodeSession()),
+    playerId,
     playerName: 'Pixel',
     featureOf,
     language: 'en',

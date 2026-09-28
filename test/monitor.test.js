@@ -55,6 +55,13 @@ function createMonitor({ sessions = [tvSession()], configOverrides = {} } = {}) 
       return fake.search;
     },
     getLatestItems: async () => [],
+    episodes: [],
+    getEpisodes: async (seriesId, { startItemId, limit } = {}) => {
+      calls.push(['episodes', seriesId, startItemId ?? null, limit ?? null]);
+      const all = fake.episodes;
+      const from = startItemId ? all.findIndex((e) => e.Id === startItemId) : 0;
+      return from === -1 ? [] : all.slice(from, limit ? from + limit : undefined);
+    },
     getImage: async (itemId, imageType, width) => {
       calls.push(['image', itemId, width, imageType]);
       return fake.images[width] ?? null;
@@ -336,7 +343,7 @@ test('player widget: the chosen player as a remote', async () => {
   assert.deepEqual(validateWidgetContent(content), []);
   assert.equal(content.components[0].text, 'Big Buck Bunny');
   const pause = content.components.find((c) => c.type === 'button' && c.icon === 'pause');
-  assert.equal(pause.device_feature, `${TV}:pause`);
+  assert.deepEqual(pause.action, { key: 'pause', params: { player: TV } });
   const image = content.components.find((c) => c.type === 'image');
   assert.match(image.key, /^poster-/);
   assert.equal(image.fit, 'contain', 'a portrait poster is shown whole');
@@ -361,7 +368,7 @@ test('player widget without a player (or with the server): follows the playback'
     const status = content.components.find((c) => c.type === 'status');
     assert.deepEqual(status.items.at(-1), { label: 'Lecteur', value: 'Living room TV' });
     const pause = content.components.find((c) => c.type === 'button' && c.icon === 'pause');
-    assert.equal(pause.device_feature, `${TV}:pause`);
+    assert.deepEqual(pause.action, { key: 'pause', params: { player: TV } });
   }
   monitor.sessions.clear();
   const idle = monitor.playerContent('fr', undefined);
@@ -383,4 +390,85 @@ test('player widget: a player created in Gladys but not seen yet keeps its name'
 test('normalizeItem tolerates partial items', () => {
   assert.equal(normalizeItem({ Id: 5 }).id, '5');
   assert.equal(normalizeItem({}), null);
+});
+
+test('next / previous on an episode play the neighbour episode', async () => {
+  const phone = phoneEpisodeSession({ SupportsRemoteControl: true });
+  const { monitor, calls, fake } = createMonitor({ sessions: [phone] });
+  fake.episodes = [{ Id: 'e1' }, { Id: '9fa15c031164950ba990333134d4c7f9' }, { Id: 'e3' }];
+  await monitor.init();
+  const PHONE = `ext:jellyfin:player:${playerKey('phone-1234')}`;
+  const device = { external_id: PHONE };
+  await monitor.handleSetValue(device, { external_id: `${PHONE}:next` }, 1);
+  await monitor.handleSetValue(device, { external_id: `${PHONE}:previous` }, 1);
+  fake.episodes = [{ Id: '9fa15c031164950ba990333134d4c7f9' }];
+  await monitor.handleSetValue(device, { external_id: `${PHONE}:next` }, 1);
+  monitor.stop();
+  assert.deepEqual(
+    calls.filter((c) => c[0] !== 'episodes'),
+    [
+      ['play', 'session-phone-1', ['e3'], 'PlayNow'],
+      ['play', 'session-phone-1', ['e1'], 'PlayNow'],
+      // Last episode: nothing to jump to, the plain command is sent.
+      ['playstate', 'session-phone-1', 'NextTrack'],
+    ],
+  );
+  assert.deepEqual(calls[0], [
+    'episodes',
+    '4def373444fc7a79b4592aed4ffe492e',
+    '9fa15c031164950ba990333134d4c7f9',
+    2,
+  ]);
+});
+
+test('next on a movie is the plain playstate command', async () => {
+  const { monitor, calls } = createMonitor();
+  await monitor.init();
+  await monitor.handleSetValue({ external_id: TV }, { external_id: `${TV}:next` }, 1);
+  monitor.stop();
+  assert.deepEqual(calls, [['playstate', 'session-tv-1', 'NextTrack']]);
+});
+
+test('the state expected after a command shows until the player confirms it', async () => {
+  const { gladys, monitor, fake } = createMonitor();
+  await monitor.init();
+  await monitor.widgetAction('pause', { player: TV });
+  await monitor.queue;
+  monitor.stop();
+  // Shown at once: sensor and widget, while the app has not reported yet.
+  assert.equal(gladys.lastState(`${TV}:playback-state`), 0);
+  const content = monitor.playerContent('fr', TV);
+  assert.ok(content.components.some((c) => c.type === 'button' && c.icon === 'play'));
+
+  // A late snapshot still saying "playing" does not flip it back...
+  await monitor.refreshSessions();
+  assert.equal(gladys.lastState(`${TV}:playback-state`), 0);
+  // ...the confirmation clears the expectation.
+  fake.sessions = [tvSession({ PlayState: { PositionTicks: 1_200_000_000, IsPaused: true } })];
+  await monitor.refreshSessions();
+  assert.equal(monitor.expected.size, 0);
+
+  // Stop: the widget shows nothing playing right away.
+  await monitor.widgetAction('stop', { player: TV });
+  monitor.stop();
+  assert.equal(
+    monitor.playerContent('fr', TV).components[1].text,
+    "Rien n'est en cours de lecture.",
+  );
+});
+
+test('an expectation the player never confirms runs out', async () => {
+  const { monitor } = createMonitor();
+  await monitor.init();
+  await monitor.widgetAction('pause', { player: TV });
+  monitor.stop();
+  monitor.expected.get(monitor.sessions.keys().next().value).until = Date.now() - 1;
+  assert.equal(monitor.effective(monitor.sessions.keys().next().value).state, 'playing');
+});
+
+test('widget actions: known keys only, a connected player only', async () => {
+  const { monitor } = createMonitor();
+  await monitor.init();
+  await assert.rejects(monitor.widgetAction('volume', { player: TV }), /Unknown widget action/);
+  await assert.rejects(monitor.widgetAction('pause', {}), /Not a player device/);
 });

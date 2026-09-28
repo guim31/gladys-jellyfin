@@ -284,14 +284,17 @@ export function describeItem(item) {
 
 /**
  * Content of the player widget: one player, as a remote.
- * @param {{ session: object|null, playerName: string, featureOf: (key: string) => string,
- *   language: string, register: (artwork: object) => string, followed?: boolean }} input
+ * @param {{ session: object|null, playerId: string, playerName: string,
+ *   featureOf: (key: string) => string, language: string,
+ *   register: (artwork: object) => string, followed?: boolean }} input
+ *   `playerId` is the player device external id (the buttons' action param),
  *   `featureOf` gives the external id of one of the player's features;
  *   `followed` is set when no player was picked and the widget follows the
  *   current playback.
  */
 export function buildPlayerContent({
   session,
+  playerId,
   playerName,
   featureOf,
   language,
@@ -358,40 +361,22 @@ export function buildPlayerContent({
     status.push({ label: t.player, value: truncate(session.deviceName, 40) });
   }
   components.push({ type: 'status', items: status });
+  // Widget actions, not device features: once the command is sent, the core
+  // refetches the widget at once instead of waiting for its rate-limited
+  // refresh, and the content shows the state expected after the command.
+  const button = (label, icon, style, key) => ({
+    type: 'button',
+    label,
+    icon,
+    style,
+    action: { key, params: { player: playerId } },
+  });
   components.push(
     paused
-      ? {
-          type: 'button',
-          label: t.play,
-          icon: 'play',
-          style: 'primary',
-          device_feature: featureOf('play'),
-          value: 1,
-        }
-      : {
-          type: 'button',
-          label: t.pause,
-          icon: 'pause',
-          style: 'primary',
-          device_feature: featureOf('pause'),
-          value: 1,
-        },
-    {
-      type: 'button',
-      label: t.stop,
-      icon: 'square',
-      style: 'secondary',
-      device_feature: featureOf('stop'),
-      value: 1,
-    },
-    {
-      type: 'button',
-      label: t.next,
-      icon: 'skip-forward',
-      style: 'secondary',
-      device_feature: featureOf('next'),
-      value: 1,
-    },
+      ? button(t.play, 'play', 'primary', 'play')
+      : button(t.pause, 'pause', 'primary', 'pause'),
+    button(t.stop, 'square', 'secondary', 'stop'),
+    button(t.next, 'skip-forward', 'secondary', 'next'),
   );
   return { ttl_seconds: 30, components };
 }

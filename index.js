@@ -176,6 +176,13 @@ gladys.onWidgetGet(WIDGET.PLAYER, async ({ settings, language }) => {
   return monitor.playerContent(language, settings?.player);
 });
 
+gladys.onWidgetAction(WIDGET.PLAYER, async (actionKey, params) => {
+  if (!monitor) {
+    throw new Error(NOT_CONNECTED_ERROR);
+  }
+  await monitor.widgetAction(actionKey, params);
+});
+
 gladys.onWidgetGetImage(async (imageKey) => {
   if (!monitor) {
     throw new Error(NOT_CONNECTED_ERROR);

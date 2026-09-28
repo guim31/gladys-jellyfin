@@ -85,7 +85,15 @@ The player must be connected to the server to receive a message or a media.
   the server while the key is refused: a reverse proxy running fail2ban
   could otherwise ban your address.
 - **A button does nothing**: not every app accepts remote control. TV apps
-  and the web client do; some mobile apps do not.
+  and the web client do; some mobile apps do not. "Next" and "Previous" on an
+  episode play the neighbour episode, which works even on apps without a play
+  queue (Swiftfin).
+- **The message does not show up**: it depends on the app. Jellyfin Web and
+  Jellyfin for Android TV show it; Swiftfin (Apple TV, iOS) does not handle
+  it yet, and the official iOS app does not show it during video playback.
+- **The button does not change state right away**: the buttons of the
+  "Player" widget show the expected state as soon as the command is sent,
+  then the app confirms it (some take a few seconds).
 - **Updates are slow**: the integration follows playback in real time over a
   WebSocket. If your reverse proxy does not forward WebSockets, it falls back
   to polling every 15 seconds.

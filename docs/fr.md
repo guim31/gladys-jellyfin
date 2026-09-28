@@ -93,7 +93,16 @@ lecture.
   reverse proxy équipé de fail2ban pourrait sinon bannir votre adresse.
 - **Un bouton ne fait rien** : toutes les applications n'acceptent pas le
   contrôle à distance. Les applications TV et le client web l'acceptent ;
-  certaines applications mobiles non.
+  certaines applications mobiles non. « Suivant » et « Précédent » sur un
+  épisode lancent l'épisode voisin, ce qui fonctionne même sur les
+  applications qui n'ont pas de file de lecture (Swiftfin).
+- **Le message ne s'affiche pas** : cela dépend de l'application. Jellyfin Web
+  et Jellyfin pour Android TV l'affichent ; Swiftfin (Apple TV, iOS) ne le gère
+  pas encore, et l'application iOS officielle ne l'affiche pas pendant une
+  lecture vidéo.
+- **Le bouton ne change pas tout de suite d'état** : les boutons du widget
+  « Lecteur » affichent l'état attendu dès la commande envoyée, puis
+  l'application le confirme (certaines mettent quelques secondes).
 - **La mise à jour est lente** : l'intégration suit les lectures en temps
   réel par WebSocket. Si votre reverse proxy ne relaie pas les WebSockets,
   elle se replie sur une interrogation toutes les 15 secondes.
