@@ -8,8 +8,8 @@
     "de": "Steuere deine Jellyfin- und Emby-Player, verfolge die Wiedergabe und reagiere in Szenen darauf.",
     "es": "Controle sus reproductores Jellyfin y Emby, siga lo que se reproduce y reaccione en sus escenas."
   },
-  "version": "0.2.1",
-  "docker_image": "ghcr.io/guim31/gladys-jellyfin:0.2.1",
+  "version": "0.3.0",
+  "docker_image": "ghcr.io/guim31/gladys-jellyfin:0.3.0",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/guim31/gladys-jellyfin/main/cover.jpg",
   "categories": ["multimedia"],
