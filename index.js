@@ -20,6 +20,7 @@ import { MediaMonitor } from './src/monitor.js';
 import { ServerSocket } from './src/media/socket.js';
 import { AuthError } from './src/media/api.js';
 import { WIDGET } from './src/widgets.js';
+import { MESSAGES } from './src/i18n.js';
 
 const manifest = JSON.parse(
   readFileSync(new URL('./gladys-assistant-integration.json', import.meta.url), 'utf8'),
@@ -50,15 +51,9 @@ let consecutiveFailures = 0;
 /** Increments on every initialize(): only the newest run may publish. */
 let initGeneration = 0;
 
-const NOT_CONFIGURED_MESSAGE = {
-  en: 'Fill in the server URL and API key in the configuration.',
-  fr: "Renseignez l'URL du serveur et la clé d'API dans la configuration.",
-};
+const NOT_CONFIGURED_MESSAGE = MESSAGES.notConfigured;
 
-const AUTH_REFUSED_MESSAGE = {
-  en: 'The server refused the API key. Create a new one (Dashboard > API Keys) and save it here.',
-  fr: "Le serveur refuse la clé d'API. Créez-en une nouvelle (Tableau de bord > Clés API) et enregistrez-la ici.",
-};
+const AUTH_REFUSED_MESSAGE = MESSAGES.authRefused;
 
 const NOT_CONNECTED_ERROR = 'Jellyfin / Emby server not connected';
 
@@ -121,10 +116,7 @@ gladys.onAction('test_connection', async () => {
   const { name, version } = testMonitor.server;
   const libraries = testMonitor.libraries.length;
   const players = testMonitor.players.size;
-  return {
-    en: `Connected to "${name}" (${testMonitor.label} ${version}): ${libraries} libraries, ${players} players connected.`,
-    fr: `Connecté à « ${name} » (${testMonitor.label} ${version}) : ${libraries} bibliothèques, ${players} lecteurs connectés.`,
-  };
+  return MESSAGES.connected({ name, label: testMonitor.label, version, libraries, players });
 });
 
 gladys.onAction('scan_players', async () => {
@@ -133,10 +125,7 @@ gladys.onAction('scan_players', async () => {
   }
   await monitor.refreshSessions();
   await gladys.publishDiscoveredDevices(monitor.buildDevices());
-  return {
-    en: `${monitor.players.size} players known. New ones appear in the Discovery tab.`,
-    fr: `${monitor.players.size} lecteurs connus. Les nouveaux apparaissent dans l'onglet Découverte.`,
-  };
+  return MESSAGES.playersKnown(monitor.players.size);
 });
 
 // --- Scene actions ------------------------------------------------------------
@@ -261,12 +250,7 @@ async function initialize() {
       return;
     }
     logger.error(`Initialization failed: ${err.message} (new attempt in 1 min)`);
-    await gladys
-      .setConnectionStatus(false, {
-        en: `Cannot reach the server: ${err.message}`,
-        fr: `Impossible de joindre le serveur : ${err.message}`,
-      })
-      .catch(() => {});
+    await gladys.setConnectionStatus(false, MESSAGES.unreachable(err.message)).catch(() => {});
     retryTimer = setTimeout(() => {
       retryTimer = null;
       if (!isStale()) {
@@ -349,12 +333,7 @@ async function handleSessions(refresh) {
     consecutiveFailures += 1;
     logger.warn(`Session refresh failed (${consecutiveFailures}): ${err.message}`);
     if (consecutiveFailures === 3) {
-      await gladys
-        .setConnectionStatus(false, {
-          en: `Lost contact with the server: ${err.message}`,
-          fr: `Contact perdu avec le serveur : ${err.message}`,
-        })
-        .catch(() => {});
+      await gladys.setConnectionStatus(false, MESSAGES.contactLost(err.message)).catch(() => {});
     }
   }
 }

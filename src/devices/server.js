@@ -70,7 +70,7 @@ function sanitizeKey(value) {
  * @param {object} gladys - SDK instance.
  * @param {{ kind: 'jellyfin'|'emby', id: string, name: string }} server
  * @param {Array<{ id: string, name: string, collectionType: string }>} libraries
- * @param {{ library_sensors: boolean, language: 'fr'|'en' }} config
+ * @param {{ library_sensors: boolean, language: 'fr'|'en'|'de'|'es' }} config
  */
 export function buildServerDevice(gladys, server, libraries, config) {
   const t = texts(config.language);
