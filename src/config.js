@@ -10,6 +10,8 @@
 // rest of the code never has to deal with `undefined` or badly-typed values.
 // -----------------------------------------------------------------------------
 
+import { LANGUAGES } from './i18n.js';
+
 // Defaults: they MUST stay consistent with the `default` values declared in the
 // `config_schema` of the manifest.
 export const DEFAULT_CONFIG = {
@@ -18,7 +20,7 @@ export const DEFAULT_CONFIG = {
   poll_frequency: 300, // seconds, how often library statistics are refreshed
   library_sensors: true,
   allow_self_signed: false,
-  language: 'fr', // names of the devices and features ('fr' | 'en')
+  language: 'fr', // names of the devices and features ('fr' | 'en' | 'de' | 'es')
 };
 
 /**
@@ -35,7 +37,7 @@ export function normalizeConfig(raw = {}) {
     // Booleans may arrive as strings from a form.
     library_sensors: raw.library_sensors !== false && raw.library_sensors !== 'false',
     allow_self_signed: raw.allow_self_signed === true || raw.allow_self_signed === 'true',
-    language: raw.language === 'en' ? 'en' : DEFAULT_CONFIG.language,
+    language: LANGUAGES.includes(raw.language) ? raw.language : DEFAULT_CONFIG.language,
   };
 }
 

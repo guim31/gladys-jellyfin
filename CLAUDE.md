@@ -42,7 +42,11 @@ dans les deux.
   fail2ban côté serveur.
 - Quatre déclencheurs `playback_*` filtrables par lecteur et `media_type` ; actions
   `display_message` et `play_media` ; widgets `now_playing`, `player` et `latest_media` ; champ
-  `language` (fr par défaut).
+  `language` (fr, en, de, es ; fr par défaut).
+- Textes en quatre langues (en, fr, de, es), comme l'interface de Gladys : allemand au « du »,
+  espagnol au « usted ». Tout texte du code passe par `src/i18n.js` (`TEXTS`, `MESSAGES`) ;
+  `test/i18n.test.js` refuse une langue manquante, un texte vide ou trop long, un « Sie » allemand
+  et tout objet `{ en, fr }` écrit ailleurs.
 - Widget `player` : sans lecteur choisi, ou si l'appareil choisi est le serveur, il **suit la
   lecture en cours**. Ses boutons sont des actions de widget, et l'état attendu après
   play/pause/stop s'affiche 10 s au plus, jusqu'à confirmation (`MediaMonitor.expected/effective`).

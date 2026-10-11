@@ -106,7 +106,7 @@ export function playerDeviceName(kind, player) {
  * @param {object} gladys - SDK instance.
  * @param {'jellyfin'|'emby'} kind
  * @param {{ key: string, deviceName: string, client: string }} player
- * @param {'fr'|'en'} language
+ * @param {'fr'|'en'|'de'|'es'} language
  */
 export function buildPlayerDevice(gladys, kind, player, language) {
   const t = texts(language);

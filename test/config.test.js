@@ -59,6 +59,8 @@ test('the library interval is clamped, an empty value falls back to the default'
   assert.equal(normalizeConfig({ poll_frequency: 'abc' }).poll_frequency, 300);
 });
 
-test('an unknown language falls back to French', () => {
-  assert.equal(normalizeConfig({ language: 'de' }).language, 'fr');
+test('German and Spanish are kept, an unknown language falls back to French', () => {
+  assert.equal(normalizeConfig({ language: 'de' }).language, 'de');
+  assert.equal(normalizeConfig({ language: 'es' }).language, 'es');
+  assert.equal(normalizeConfig({ language: 'it' }).language, 'fr');
 });

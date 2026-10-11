@@ -15,7 +15,7 @@
 // -----------------------------------------------------------------------------
 
 import { WIDGET_COLORS } from '@gladysassistant/integration-sdk';
-import { texts } from './i18n.js';
+import { MESSAGES, texts } from './i18n.js';
 import { SERVER_KIND } from './media/api.js';
 import { formatTitle, episodeCode, mediaCategory, MEDIA_TYPE, truncate } from './media/sessions.js';
 
@@ -118,7 +118,7 @@ export function itemLinks(server, itemId) {
       ? `${server.baseUrl}/web/#/details?id=${id}&serverId=${serverId}`
       : `${server.baseUrl}/web/index.html#!/item?id=${id}&serverId=${serverId}`;
   const label = server.kind === SERVER_KIND.JELLYFIN ? 'Jellyfin' : 'Emby';
-  return [{ url, label: { en: `Open in ${label}`, fr: `Ouvrir dans ${label}` } }];
+  return [{ url, label: MESSAGES.openIn(label) }];
 }
 
 /**
