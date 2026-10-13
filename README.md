@@ -32,12 +32,14 @@ User documentation (rehosted by Gladys on the Configuration screen):
 
 ```
 .
-├─ index.js                          # SDK bootstrap + event wiring (no server logic)
+├─ index.js                          # SDK bootstrap (no server logic)
 ├─ src/
+│  ├─ app.js                         # SDK event wiring, refresh loops (testable with the SDK fake Gladys)
+│  ├─ failure-log.js                 # a repeated failure logged once, then once when it recovers
 │  ├─ monitor.js                     # MediaMonitor: state, publication, commands, scene actions, widgets
 │  ├─ scene-events.js                # playback transitions -> scene triggers (pure)
 │  ├─ widgets.js                     # widget content builders (pure)
-│  ├─ i18n.js                        # fr/en texts
+│  ├─ i18n.js                        # en/fr/de/es texts
 │  ├─ config.js                      # config defaults + normalization
 │  ├─ media/
 │  │  ├─ api.js                      # Jellyfin / Emby HTTP API client

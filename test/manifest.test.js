@@ -15,7 +15,7 @@ import { PLAY_MEDIA_TYPES } from '../src/monitor.js';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const manifest = JSON.parse(await read('../gladys-assistant-integration.json'));
-const indexSource = await read('../index.js');
+const indexSource = await read('../src/app.js');
 const packageJson = JSON.parse(await read('../package.json'));
 
 test('every manifest action, scene action and widget has a registered handler', () => {

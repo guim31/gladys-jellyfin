@@ -1,8 +1,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { ServerSocket } from '../src/media/socket.js';
 import { MediaServerApi, SERVER_KIND } from '../src/media/api.js';
+import { captureLogs } from './helpers/logs.js';
 
 // A local WebSocket server standing in for the real-time socket of the media
 // server: it records the upgrade requests and the messages it receives.
@@ -136,3 +138,86 @@ test('a refused upgrade does not throw, and stop() cancels the retry', async () 
   socket.stop();
   assert.equal(socket.reconnectTimer, null);
 });
+
+test('a refusal repeated at every attempt is logged once, the key never', async (t) => {
+  const logs = captureLogs(t);
+  // An HTTP server that refuses the upgrade twice, accepts it then closes it,
+  // refuses it twice again, then accepts it for good.
+  const accepting = new WebSocketServer({ noServer: true });
+  let attempts = 0;
+  const http = createServer();
+  http.on('upgrade', (req, sock, head) => {
+    attempts += 1;
+    if ([1, 2, 4, 5].includes(attempts)) {
+      sock.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
+    accepting.handleUpgrade(req, sock, head, (ws) => {
+      if (attempts === 3) {
+        ws.close();
+      }
+    });
+  });
+  await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    accepting.close();
+    http.close();
+  });
+  const api = new MediaServerApi({
+    server_url: `http://127.0.0.1:${http.address().port}`,
+    api_key: 'the-secret-key',
+  });
+  api.kind = SERVER_KIND.EMBY; // The key travels in the URL.
+  let opened = 0;
+  const socket = new ServerSocket(api, {
+    onSessions: () => {},
+    onStatus: (open) => (opened += open ? 1 : 0),
+  });
+  socket.scheduleReconnect = fastReconnect;
+  socket.start();
+  await waitFor(() => opened === 2);
+  socket.stop();
+
+  // One warning per outage, not one per attempt.
+  assert.equal(logs.at('WARN').length, 2, logs.loud().join('\n'));
+  assert.match(logs.at('WARN')[0], /refused \(HTTP 403\)/);
+  assert.deepEqual(
+    logs.at('INFO').map((line) => line.replace(/^.*\] /, '')),
+    ['Real-time socket connected', 'Real-time socket connected again'],
+  );
+  assert.deepEqual(logs.at('ERROR'), []);
+  for (const line of logs.lines) {
+    assert.ok(!line.includes('the-secret-key'), line);
+  }
+});
+
+test('a socket closed and reopened logs its first connection only', async (t) => {
+  const logs = captureLogs(t);
+  let connections = 0;
+  onConnection = (ws) => {
+    connections += 1;
+    if (connections === 1) {
+      ws.close();
+    }
+  };
+  const socket = new ServerSocket(apiOf(SERVER_KIND.JELLYFIN), { onSessions: () => {} });
+  socket.scheduleReconnect = fastReconnect;
+  socket.start();
+  await waitFor(() => connections === 2 && socket.isOpen);
+  socket.stop();
+  assert.deepEqual(
+    logs.loud().map((line) => line.replace(/^.*\] /, '')),
+    ['Real-time socket connected'],
+  );
+});
+
+/** Reconnect after 20 ms instead of the 5 s backoff (tests only). */
+function fastReconnect() {
+  if (this.stopped || this.reconnectTimer) {
+    return;
+  }
+  this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = null;
+    this.connect();
+  }, 20);
+}

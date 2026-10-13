@@ -2,7 +2,7 @@
 
 Pilotez vos lecteurs Jellyfin et Emby, suivez les lectures et réagissez-y dans vos scènes.
 
-Intégration externe pour [Gladys Assistant](https://gladysassistant.com), bâtie sur le template officiel `GladysAssistant/integration-template-js` (SDK `@gladysassistant/integration-sdk` ^0.14.0, `gladys_version` `>=5.1.0`). Mainteneur : Guilhem (`guim31`).
+Intégration externe pour [Gladys Assistant](https://gladysassistant.com), bâtie sur le template officiel `GladysAssistant/integration-template-js` (SDK `@gladysassistant/integration-sdk` ^0.15.0, `gladys_version` `>=5.1.0`). Mainteneur : Guilhem (`guim31`).
 
 Ce fichier rassemble ce qu'une session de code doit savoir et qui ne se lit pas dans le code : choix de conception, faits vérifiés en réel, pièges déjà payés. Le compléter quand un nouveau piège est découvert.
 
@@ -35,6 +35,30 @@ dans les deux.
   toast, invisible pendant la vidéo dans l'app iOS ; `NextTrack` exige une file de lecture. D'où
   suivant/précédent sur un épisode par `/Shows/{id}/Episodes?StartItemId=&Limit=2` puis PlayNow,
   vérifié sur les trois serveurs.
+
+## Architecture, polling et logs (maintenance SDK 0.15, 13/10/2026)
+
+- `index.js` ne fait que créer le SDK et appeler `createApp(gladys)` de `src/app.js`, qui
+  enregistre tous les gestionnaires et pilote les boucles. `test/app.test.js` fait tourner
+  l'intégration entière contre le faux Gladys du SDK (`@gladysassistant/integration-sdk/testing`),
+  serveur et socket remplacés par des doublures (fabriques `createMonitor` / `createSocket`).
+  Les tests unitaires du monitor gardent le petit faux maison `test/helpers/fakeGladys.js`.
+- **Polling** : tous les appareils sont publiés en `should_poll: false`, sans `poll_frequency`.
+  Aucun état ne dépend du planificateur du cœur (issue Gladys #3198) : socket temps réel, sondage
+  de repli des sessions (15 s socket coupé, 1 min sinon) et compteurs de bibliothèques
+  (`poll_frequency` en secondes, 60 à 3600) tournent dans le conteneur. `onPoll` n'est qu'un
+  repli inoffensif (rafraîchissement des sessions). Le premier test de `test/app.test.js` le vérifie.
+- **Logs** : info = cycle de vie (démarrage, serveur joint avec un résumé, nouveau lecteur après
+  le démarrage, socket connecté la première fois ou après un refus signalé) et une ligne par
+  action de l'utilisateur (commande, message, lecture, scan, configuration). Le détail (événements
+  de scène, reconnexions du socket, chaque `onSetValue`) passe en debug (`LOG_LEVEL=debug`). Un
+  échec répété est dédupliqué (`src/failure-log.js` ; même logique pour l'initialisation et le
+  refus du socket) : une ligne au premier échec, une au retour. Ne jamais journaliser l'URL du
+  socket : pour Emby, elle porte la clé (`?api_key=`). `test/app.test.js` et `test/socket.test.js`
+  vérifient qu'un cycle normal n'écrit rien au-dessus de debug et que la clé n'apparaît jamais.
+- `CHANGELOG.md` (créé à cette occasion) : décrire chaque changement sous `## [Unreleased]`. Ce
+  dépôt publie par le workflow Release (Actions), qui n'a pas `.github/scripts/release.mjs` :
+  `outils/release.sh` ne s'applique pas tel quel.
 
 ## Choix
 

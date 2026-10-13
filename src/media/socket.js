@@ -16,6 +16,12 @@
 //   - keep-alive: Jellyfin announces `ForceKeepAlive` (seconds) and closes
 //     a socket that stays silent; answering `KeepAlive` at half that period
 //     suits both.
+//
+// Logs: the first connection is an info line; a socket closed and reopened
+// (reverse proxy idle timeout, server restart) only shows in debug, and a
+// refusal repeated at every reconnection attempt is logged once, with one
+// info line when the socket works again. The URL is never logged: for Emby
+// it carries the API key.
 // -----------------------------------------------------------------------------
 
 import WebSocket from 'ws';
@@ -44,6 +50,8 @@ export class ServerSocket {
     this.keepAliveTimer = null;
     this.reconnectTimer = null;
     this.failures = 0;
+    this.hasOpened = false;
+    this.refusalReported = false;
   }
 
   /** True while the socket is connected. */
@@ -93,7 +101,15 @@ export class ServerSocket {
 
     ws.on('open', () => {
       this.failures = 0;
-      logger.info('Real-time socket connected');
+      if (!this.hasOpened) {
+        logger.info('Real-time socket connected');
+      } else if (this.refusalReported) {
+        logger.info('Real-time socket connected again');
+      } else {
+        logger.debug('Real-time socket reconnected');
+      }
+      this.hasOpened = true;
+      this.refusalReported = false;
       ws.send(JSON.stringify({ MessageType: 'SessionsStart', Data: SESSIONS_SUBSCRIPTION }));
       this.armKeepAlive(DEFAULT_KEEP_ALIVE_SECONDS * 2);
       this.handlers.onStatus?.(true);
@@ -102,8 +118,14 @@ export class ServerSocket {
     ws.on('message', (raw) => this.handleMessage(raw));
 
     ws.on('unexpected-response', (_req, res) => {
-      // The socket is optional (the poll carries on): one warning, no stack.
-      logger.warn(`Real-time socket refused (HTTP ${res.statusCode}), polling only for now`);
+      // The socket is optional (the poll carries on): one warning per outage,
+      // no stack, the next attempts in debug.
+      if (this.refusalReported) {
+        logger.debug(`Real-time socket still refused (HTTP ${res.statusCode})`);
+      } else {
+        this.refusalReported = true;
+        logger.warn(`Real-time socket refused (HTTP ${res.statusCode}), polling only for now`);
+      }
       ws.terminate();
     });
 
@@ -111,7 +133,8 @@ export class ServerSocket {
       logger.debug(`Real-time socket error: ${err.message}`);
     });
 
-    ws.on('close', () => {
+    ws.on('close', (code) => {
+      logger.debug(`Real-time socket closed (code ${code}), reconnecting`);
       this.clearKeepAlive();
       if (this.ws === ws) {
         this.ws = null;
