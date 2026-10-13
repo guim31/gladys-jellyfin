@@ -123,6 +123,9 @@ export class MediaMonitor {
     // Session lists are processed one at a time: a poll and a socket push
     // arriving together must not interleave (duplicate scene events).
     this.queue = Promise.resolve();
+    // False during init(): the players already connected are summed up in
+    // the "Connected to" line instead of one line each.
+    this.ready = false;
   }
 
   /**
@@ -139,11 +142,13 @@ export class MediaMonitor {
       name: info?.ServerName ?? detected.name,
       version: info?.Version ?? detected.version,
     };
-    logger.info(
-      `Connected to ${this.label} server "${this.server.name}" (v${this.server.version})`,
-    );
     this.libraries = await this.api.getLibraries();
     await this.applySessions(await this.api.getSessions());
+    this.ready = true;
+    logger.info(
+      `Connected to ${this.label} server "${this.server.name}" (v${this.server.version}): ` +
+        `${this.libraries.length} libraries, ${this.players.size} players`,
+    );
   }
 
   /** "Jellyfin" or "Emby". */
@@ -304,7 +309,7 @@ export class MediaMonitor {
         session,
         playerDeviceName(this.server.kind, player),
       );
-      logger.info(`Scene event ${trigger}: ${data.title} on ${player.deviceName}`);
+      logger.debug(`Scene event ${trigger}: ${data.title} on ${player.deviceName}`);
       await this.gladys.publishSceneEvent(trigger, data).catch((err) => {
         // Older Gladys (no scene declarations) or rate limit: never fatal.
         logger.debug(`publishSceneEvent(${trigger}) failed: ${err.message}`);
@@ -691,7 +696,8 @@ export class MediaMonitor {
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
-      this.refreshSessions().catch((err) => logger.warn(`Session refresh failed: ${err.message}`));
+      // A failure here is reported by the next poll of the app (deduplicated).
+      this.refreshSessions().catch((err) => logger.debug(`Session refresh failed: ${err.message}`));
     }, delayMs);
   }
 
@@ -720,7 +726,12 @@ export class MediaMonitor {
       deviceName: session.deviceName,
       client: session.client,
     });
-    logger.info(`New player discovered: ${session.deviceName} (${session.client})`);
+    const line = `New player discovered: ${session.deviceName} (${session.client})`;
+    if (this.ready) {
+      logger.info(line);
+    } else {
+      logger.debug(line);
+    }
     return true;
   }
 
