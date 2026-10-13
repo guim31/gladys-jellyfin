@@ -90,14 +90,31 @@ export function createApp(gladys, options = {}) {
     await gladys.publishDiscoveredDevices(monitor.buildDevices());
   });
 
+  /**
+   * Run a user action: the monitor logs it in info when it succeeds, and the
+   * SDK only acks a failure to Gladys, so a failure is logged here as a
+   * warning. Either way, one line per user action.
+   * @param {string} what - The action, for the log line.
+   * @param {() => Promise<any>} run
+   */
+  async function userAction(what, run) {
+    try {
+      if (!monitor) {
+        throw new Error(NOT_CONNECTED_ERROR);
+      }
+      return await run();
+    } catch (err) {
+      logger.warn(`${what} failed: ${err.message}`);
+      throw err;
+    }
+  }
+
   // --- Command: the user acts on a controllable feature ----------------------
-  // The monitor logs the command it sends: one info line per user action.
   gladys.onSetValue(async (device, feature, value) => {
     logger.debug(`onSetValue <- ${feature.external_id} = ${value}`);
-    if (!monitor) {
-      throw new Error(NOT_CONNECTED_ERROR);
-    }
-    await monitor.handleSetValue(device, feature, value);
+    await userAction(`Command ${feature.external_id}`, () =>
+      monitor.handleSetValue(device, feature, value),
+    );
   });
 
   // --- Device created: the user added a discovered device --------------------
@@ -160,18 +177,12 @@ export function createApp(gladys, options = {}) {
 
   // --- Scene actions ----------------------------------------------------------
   gladys.onSceneAction('display_message', async (fields) => {
-    if (!monitor) {
-      throw new Error(NOT_CONNECTED_ERROR);
-    }
-    await monitor.displayMessage(fields);
+    await userAction('Scene action display_message', () => monitor.displayMessage(fields));
   });
 
-  gladys.onSceneAction('play_media', async (fields) => {
-    if (!monitor) {
-      throw new Error(NOT_CONNECTED_ERROR);
-    }
-    return monitor.playMedia(fields);
-  });
+  gladys.onSceneAction('play_media', async (fields) =>
+    userAction('Scene action play_media', () => monitor.playMedia(fields)),
+  );
 
   // --- Dashboard widgets ------------------------------------------------------
   gladys.onWidgetGet(WIDGET.NOW_PLAYING, async ({ language }) => {
@@ -196,10 +207,7 @@ export function createApp(gladys, options = {}) {
   });
 
   gladys.onWidgetAction(WIDGET.PLAYER, async (actionKey, params) => {
-    if (!monitor) {
-      throw new Error(NOT_CONNECTED_ERROR);
-    }
-    await monitor.widgetAction(actionKey, params);
+    await userAction(`Widget action ${actionKey}`, () => monitor.widgetAction(actionKey, params));
   });
 
   gladys.onWidgetGetImage(async (imageKey) => {
@@ -213,7 +221,9 @@ export function createApp(gladys, options = {}) {
   gladys.onConfigUpdated(async (newConfig) => {
     logger.info('onConfigUpdated -> new configuration received');
     config = normalizeConfig(newConfig);
-    // The server address or key may have changed: rebuild everything.
+    // The server address or key may have changed: rebuild everything, and a
+    // failure of the new configuration is a new failure, logged again.
+    initFailing = false;
     await initialize();
   });
 
@@ -242,6 +252,7 @@ export function createApp(gladys, options = {}) {
     monitor = null;
 
     if (!isConfigured(config)) {
+      initFailing = false;
       logger.info('Waiting for the configuration (server URL + API key)');
       await gladys.setConnectionStatus(false, MESSAGES.notConfigured).catch(() => {});
       return;
