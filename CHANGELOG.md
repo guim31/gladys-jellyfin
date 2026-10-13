@@ -18,3 +18,9 @@ Describe each change under `## [Unreleased]` as you make it. Versions up to
   a real-time socket refused by a reverse proxy, which warned at every
   reconnection attempt.
 - Integration SDK 0.15 and dependencies updated.
+
+### Fixed
+
+- A command, scene action or widget action that fails is logged as a warning
+  (it left no trace in the logs). After a configuration change, a failure of
+  the new configuration is logged again instead of only in debug.

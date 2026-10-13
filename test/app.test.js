@@ -191,3 +191,32 @@ test('a server down at startup: one error, retries in debug, one line when reach
     1,
   );
 });
+
+test('a failed user action is logged once as a warning, without the API key', async (t) => {
+  const logs = captureLogs(t);
+  const { gladys } = await start(t);
+  logs.clear();
+  const device = gladys.fake.discoveredDevices[1];
+  const feature = device.features.find((f) => !f.read_only);
+  t.mock.method(MediaMonitor.prototype, 'handleSetValue', async () => {
+    throw new Error('HTTP 500');
+  });
+  const ack = await gladys.fake.setValue(device, feature, 1);
+  assert.equal(ack.success, false);
+  assert.equal(logs.at('WARN').length, 1);
+  assert.match(logs.at('WARN')[0], /Command .* failed: HTTP 500/);
+  for (const line of logs.lines) {
+    assert.ok(!line.includes(API_KEY), line);
+  }
+});
+
+test('a new configuration that fails is logged again, not hidden in debug', async (t) => {
+  const logs = captureLogs(t);
+  const { gladys, server } = await start(t, { detectError: new Error('ECONNREFUSED') });
+  await waitFor(() => server.calls.detect >= 3);
+  assert.equal(logs.at('ERROR').length, 1, 'retries in debug');
+  server.detectError = new Error('ENOTFOUND');
+  await gladys.fake.configUpdated({ server_url: 'http://nsa:8096', api_key: API_KEY });
+  await waitFor(() => logs.at('ERROR').length === 2);
+  assert.match(logs.at('ERROR')[1], /ENOTFOUND/);
+});
