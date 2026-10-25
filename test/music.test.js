@@ -226,6 +226,29 @@ test('now playing of a movie, an episode, nothing', () => {
   assert.equal(normalizeItem({ Id: 'a', Name: 'x', SeasonName: 'S1' }).seasonName, 'S1');
 });
 
+test('a position the server repeats while playing is not republished', async (t) => {
+  const { gladys, server } = await start(t);
+  const positions = () =>
+    gladys.fake.states.filter((s) => s.device_feature_external_id === `${WEB}:position`).length;
+  assert.equal(positions(), 1);
+  // A server that does not extrapolate: the same sample, seconds later.
+  const stale = webMusicSession({ PlayState: { ...webMusicSession().PlayState, IsMuted: false } });
+  server.sessions = [stale, tvSession()];
+  const publishes = gladys.fake.bodies('POST', '/state').length;
+  const realNow = Date.now;
+  t.after(() => {
+    Date.now = realNow;
+  });
+  Date.now = () => realNow() + 10_000;
+  await gladys.fake.poll(gladys.fake.discoveredDevices[0]);
+  const deadline = realNow() + 2000;
+  while (gladys.fake.bodies('POST', '/state').length === publishes && realNow() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(gladys.fake.lastState(`${WEB}:mute`), 0, 'the refresh went through');
+  assert.equal(positions(), 1, 'the stale sample is left out, the dashboard extrapolates');
+});
+
 test('the writable music features drive the session', async (t) => {
   const { gladys, server } = await start(t);
   const web = gladys.fake.discoveredDevices.find((d) => d.external_id === WEB);

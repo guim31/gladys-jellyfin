@@ -143,6 +143,8 @@ export class MediaMonitor {
     // False during init(): the players already connected are summed up in
     // the "Connected to" line instead of one line each.
     this.ready = false;
+    /** @type {Map<string, string>} Last state, item and position seen, by player key. */
+    this.positionSamples = new Map();
     /** The Gladys 5.3 music panel: browse, search, play, artwork. */
     this.catalog = new MusicCatalog(this);
   }
@@ -292,9 +294,20 @@ export class MediaMonitor {
   async publishNowPlaying() {
     for (const player of this.players.values()) {
       const ids = playerExternalIds(this.gladys, player.key);
-      const snapshot = nowPlayingOf(this.effective(player.key), (item) =>
+      const session = this.effective(player.key);
+      const snapshot = nowPlayingOf(session, (item) =>
         this.catalog.artworkUrl(artworkOf(item), ARTWORK_SIZE.player),
       );
+      // A position the server repeats unchanged while the same media keeps
+      // playing is a stale sample (a server that does not extrapolate it
+      // between two reports of the app): leave it out, the SDK and the
+      // dashboard keep extrapolating the last one. Jellyfin 12 moves it at
+      // every push.
+      const sample = `${session?.state}|${session?.item?.id}|${session?.positionTicks}`;
+      if (session?.state === 'playing' && this.positionSamples.get(player.key) === sample) {
+        delete snapshot.position;
+      }
+      this.positionSamples.set(player.key, sample);
       await this.gladys.publishNowPlaying(ids.device, snapshot, {
         featureExternalIds: nowPlayingFeatureIds(ids),
       });
@@ -891,8 +904,10 @@ export class MediaMonitor {
   resetPublicationCache(externalIdPrefix) {
     if (!externalIdPrefix) {
       this.lastPublished.clear();
+      this.positionSamples.clear();
       return;
     }
+    this.positionSamples.delete(extractPlayerKey(externalIdPrefix));
     for (const key of this.lastPublished.keys()) {
       if (key.startsWith(`${externalIdPrefix}:`)) {
         this.lastPublished.delete(key);
