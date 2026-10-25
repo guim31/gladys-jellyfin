@@ -12,6 +12,8 @@ import { readFile } from 'node:fs/promises';
 import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { artworkKey, validateMediaItems } from '@gladysassistant/integration-sdk';
 import { createApp } from '../src/app.js';
+import { HttpError } from '../src/media/api.js';
+import { normalizeConfig } from '../src/config.js';
 import { MediaMonitor } from '../src/monitor.js';
 import { normalizeItem, normalizeSession, playerKey } from '../src/media/sessions.js';
 import { nowPlayingOf, playerExternalIds } from '../src/devices/player.js';
@@ -83,14 +85,24 @@ async function start(t, { sessions = [webMusicSession(), tvSession()] } = {}) {
         countItems: async () => 3,
         getSessions: async () => server.sessions,
         getMarkers: async () => [],
-        getAdminUserId: async () => 'admin-user',
+        getAdminUserId: async () => {
+          server.adminCalls = (server.adminCalls ?? 0) + 1;
+          return 'admin-user';
+        },
         queryItems: async (query, path = '/Items') => {
+          if (query.Ids) {
+            return { items: query.Ids === ARTIST.Id ? [ARTIST] : [], total: 0 };
+          }
+          if (query.ParentId === 'deadbeef') {
+            throw new HttpError('HTTP 400 on GET /Items', 400);
+          }
           server.queries.push({ path, ...query });
           if (path === '/Artists/AlbumArtists') {
             return { items: [ARTIST], total: 1 };
           }
           if (query.searchTerm) {
-            return { items: [TRACKS[1], ALBUM, ARTIST], total: 3 };
+            const video = { Id: 'v1', Name: 'Films', Type: 'Playlist', MediaType: 'Video' };
+            return { items: [TRACKS[1], ALBUM, ARTIST, video], total: 4 };
           }
           if (query.IncludeItemTypes === 'MusicAlbum') {
             return { items: [ALBUM], total: 1 };
@@ -488,4 +500,79 @@ test('media ids: parsed, anything else refused', () => {
   assert.equal(parseMediaId('album:../x'), null);
   assert.equal(parseMediaId(undefined), null);
   assert.equal(playerExternalIds(createFakeGladys(), 'k').device.includes(':player:'), true);
+});
+
+test('a media gone from the library fails instead of playing something else', async (t) => {
+  const { gladys, device } = await start(t);
+  const gone = /n'est plus dans la bibliothèque/;
+  // The server ignores an unknown id in ArtistIds: checked first.
+  const artist = await gladys.fake.musicPlay(device(WEB), {
+    id: 'artist:0123abcd',
+    type: 'artist',
+  });
+  assert.match(artist.error, gone);
+  const browse = await gladys.fake.musicBrowse(device(WEB), { parentId: 'artist:0123abcd' });
+  assert.match(browse.error, gone);
+  const album = await gladys.fake.musicPlay(device(WEB), { id: 'album:deadbeef', type: 'album' });
+  assert.match(album.error, gone);
+});
+
+test('root folders need no server call; video playlists left out of search', async (t) => {
+  const { gladys, server, device } = await start(t, { sessions: [tvSession()] });
+  server.sessions = [];
+  const queries = server.queries.length;
+  await gladys.fake.musicBrowse(device(TV), {});
+  assert.equal(server.queries.length, queries);
+  assert.equal(server.adminCalls ?? 0, 0);
+  const found = await gladys.fake.musicSearch(device(TV), { query: 'x' });
+  assert.deepEqual(
+    found.data.items.map((item) => item.title),
+    ['Sinnerman', 'Pastel Noise', 'Nina Pulse'],
+  );
+});
+
+test('volume bounded, shuffle values checked, undeclared commands refused', async (t) => {
+  const { gladys, server } = await start(t, {
+    sessions: [
+      webMusicSession({
+        SupportedCommands: ['SetShuffleQueue'],
+        PlayState: { ...webMusicSession().PlayState, VolumeLevel: 150 },
+      }),
+    ],
+  });
+  assert.equal(gladys.fake.lastState(`${WEB}:volume`), 100);
+  const web = gladys.fake.discoveredDevices.find((d) => d.external_id === WEB);
+  const set = (key, value) =>
+    gladys.fake.setValue(
+      web,
+      web.features.find((f) => f.external_id === `${WEB}:${key}`),
+      value,
+    );
+  assert.match((await set('shuffle', 2)).error, /n'est pas acceptée/);
+  assert.match((await set('volume', 20)).error, /n'accepte pas cette commande/);
+  assert.match((await set('mute', 1)).error, /n'accepte pas cette commande/);
+  assert.deepEqual(server.calls, []);
+});
+
+test('a player added in Gladys but absent at start is published idle', async (t) => {
+  const gladys = createFakeGladys({
+    config: { server_url: 'http://nas:8096', api_key: 'k', language: 'fr' },
+  });
+  const ids = playerExternalIds(gladys, playerKey(WEB_DEVICE_ID));
+  const monitor = new MediaMonitor(
+    gladys,
+    normalizeConfig({ server_url: 'http://nas:8096', api_key: 'k', language: 'fr' }),
+  );
+  Object.assign(monitor.api, {
+    detect: async () => ({ kind: 'jellyfin', id: 'srv1', name: 'NAS', version: '12.2.0' }),
+    getSystemInfo: async () => ({ Id: 'srv1', ServerName: 'NAS', Version: '12.2.0' }),
+    getLibraries: async () => [],
+    getSessions: async () => [],
+  });
+  monitor.gladys.getDevices = async () => [{ external_id: ids.device }];
+  const published = [];
+  monitor.gladys.publishNowPlaying = async (id, values) => published.push([id, values]);
+  await monitor.init();
+  assert.deepEqual(published, [[ids.device, nowPlayingOf(null, () => null)]]);
+  t.after(() => monitor.stop());
 });

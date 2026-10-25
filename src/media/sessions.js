@@ -68,7 +68,11 @@ export function normalizeSession(raw) {
     item,
     state: item ? (playState.IsPaused ? 'paused' : 'playing') : 'idle',
     positionTicks: Number(playState.PositionTicks) || 0,
-    volume: Number.isFinite(volume) && playState.VolumeLevel !== null ? volume : null,
+    // Bounded: Gladys refuses a volume outside 0-100 (an app may report more).
+    volume:
+      Number.isFinite(volume) && playState.VolumeLevel !== null
+        ? Math.max(0, Math.min(100, Math.round(volume)))
+        : null,
     muted: playState.IsMuted === true,
     transcoding: playState.PlayMethod === 'Transcode',
     canSeek: playState.CanSeek !== false,

@@ -62,7 +62,8 @@ fonctionnalités `music`, volume et muet compris), `musicCommand()` de `src/moni
   sinon `/Items?ParentId=` rend 0 et `/Playlists/{id}/Items` une erreur 500) : catalogue lu au nom
   de l'utilisateur de la session, sinon du premier administrateur (`/Users`).
 - **Un id inconnu dans `ArtistIds` est ignoré** (toute la bibliothèque revient) : ne passer que
-  des ids lus sur le serveur (`parseMediaId` filtre les ids reçus).
+  des ids lus sur le serveur : un `artist:` est d'abord vérifié par `/Items?Ids=` (une scène garde
+  un id des mois). Un `ParentId` inconnu, lui, rend une 400 : « n'est plus dans la bibliothèque ».
 - Un album, un artiste ou une liste de lecture est **déplié en pistes** (150 au plus, ids dans la
   query string) : Jellyfin Web déplie un album seul, mais rien ne l'impose aux autres apps.
 - Pochettes : `Images/Primary?maxWidth&maxHeight&format=Jpg` (400 px lecteur, 128 px listes),

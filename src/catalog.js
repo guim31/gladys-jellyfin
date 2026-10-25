@@ -25,7 +25,7 @@
 // -----------------------------------------------------------------------------
 
 import { artworkKey, MUSIC_MEDIA_TYPES } from '@gladysassistant/integration-sdk';
-import { TICKS_PER_SECOND } from './media/api.js';
+import { TICKS_PER_SECOND, HttpError } from './media/api.js';
 import { texts, localizedError } from './i18n.js';
 
 /** Our root folders: no server item id contains ':'. */
@@ -151,7 +151,7 @@ export class MusicCatalog {
    * @param {{ parentId: string|null, offset: number, limit: number }} options
    */
   async browse(device, { parentId, offset = 0, limit = 50 }) {
-    const userId = await this.userOf(device);
+    this.monitor.playerSession(device?.external_id); // a player, or throws
     if (!parentId) {
       const t = texts(this.language);
       const roots = [
@@ -168,6 +168,7 @@ export class MusicCatalog {
       return { items: roots.slice(offset, offset + limit), total: roots.length };
     }
 
+    const userId = await this.userOf(device);
     const page = { UserId: userId, StartIndex: offset, Limit: limit, EnableUserData: false };
     let answer;
     if (parentId === ROOTS.albums) {
@@ -192,7 +193,8 @@ export class MusicCatalog {
       if (!media || media.kind === MUSIC_MEDIA_TYPES.TRACK) {
         throw localizedError('notBrowsable', this.language);
       }
-      answer = await this.api.queryItems({ ...page, ...this.childrenQuery(media) });
+      await this.assertExists(media, userId);
+      answer = await this.queryChildren({ ...page, ...this.childrenQuery(media) });
     }
     return { items: answer.items.map((item) => this.toMediaItem(item)), total: answer.total };
   }
@@ -242,7 +244,48 @@ export class MusicCatalog {
       Limit: limit,
       EnableUserData: false,
     });
-    return { items: answer.items.map((item) => this.toMediaItem(item)) };
+    // A video playlist is no music: left out (no paging here, nothing shifts).
+    const items = answer.items.filter(
+      (item) => !(item?.Type === 'Playlist' && item.MediaType === 'Video'),
+    );
+    return { items: items.map((item) => this.toMediaItem(item)) };
+  }
+
+  /**
+   * An artist id the server does not know is IGNORED by `ArtistIds` (the
+   * whole library comes back): check it first. An unknown album or playlist
+   * id fails by itself (`ParentId`: HTTP 400, see queryChildren).
+   * @param {{ kind: string, itemId: string }} media
+   * @param {string|null} userId
+   */
+  async assertExists(media, userId) {
+    if (media.kind !== MUSIC_MEDIA_TYPES.ARTIST) {
+      return;
+    }
+    const { items } = await this.api.queryItems({
+      UserId: userId,
+      Ids: media.itemId,
+      EnableImages: false,
+      EnableUserData: false,
+    });
+    if (!items.some((item) => String(item?.Id) === media.itemId && item.Type === 'MusicArtist')) {
+      throw localizedError('gone', this.language);
+    }
+  }
+
+  /**
+   * `/Items` under a parent: a parent that no longer exists is a 400.
+   * @param {Record<string, unknown>} query
+   */
+  async queryChildren(query) {
+    try {
+      return await this.api.queryItems(query);
+    } catch (err) {
+      if (err instanceof HttpError && (err.status === 400 || err.status === 404)) {
+        throw localizedError('gone', this.language);
+      }
+      throw err;
+    }
   }
 
   /**
@@ -348,7 +391,8 @@ export class MusicCatalog {
       // A playlist, in its own order.
       Object.assign(query, { ParentId: media.itemId, IncludeItemTypes: 'Audio' });
     }
-    const { items } = await this.api.queryItems(query);
+    await this.assertExists(media, userId);
+    const { items } = await this.queryChildren(query);
     return items.filter((item) => item?.Id).map((item) => String(item.Id));
   }
 

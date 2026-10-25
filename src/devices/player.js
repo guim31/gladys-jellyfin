@@ -320,7 +320,7 @@ function audioOf(session) {
   }
   if (session.volume !== null && session.volume !== undefined) {
     values.volume = session.volume;
-    values.mute = session.muted ? 1 : 0;
   }
+  values.mute = session.muted ? 1 : 0;
   return values;
 }

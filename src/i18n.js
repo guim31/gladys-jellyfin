@@ -323,6 +323,18 @@ export const ERRORS = {
     de: 'In diesem Element gibt es nichts abzuspielen.',
     es: 'No hay nada que reproducir en este elemento.',
   }),
+  notSupported: (player) => ({
+    en: `The app of ${player} does not accept this command from a remote.`,
+    fr: `L'application de ${player} n'accepte pas cette commande à distance.`,
+    de: `Die App von ${player} nimmt diesen Befehl nicht aus der Ferne an.`,
+    es: `La aplicación de ${player} no acepta este comando a distancia.`,
+  }),
+  gone: () => ({
+    en: 'This item is no longer in the library.',
+    fr: "Cet élément n'est plus dans la bibliothèque.",
+    de: 'Dieses Element ist nicht mehr in der Bibliothek.',
+    es: 'Este elemento ya no está en la biblioteca.',
+  }),
   badValue: () => ({
     en: 'This value is not accepted.',
     fr: "Cette valeur n'est pas acceptée.",

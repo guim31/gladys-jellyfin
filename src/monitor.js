@@ -165,6 +165,7 @@ export class MediaMonitor {
     };
     this.libraries = await this.api.getLibraries();
     await this.applySessions(await this.api.getSessions());
+    await this.publishAbsentPlayersIdle();
     this.ready = true;
     logger.info(
       `Connected to ${this.label} server "${this.server.name}" (v${this.server.version}): ` +
@@ -308,9 +309,40 @@ export class MediaMonitor {
         delete snapshot.position;
       }
       this.positionSamples.set(player.key, sample);
-      await this.gladys.publishNowPlaying(ids.device, snapshot, {
-        featureExternalIds: nowPlayingFeatureIds(ids),
-      });
+      // One player refused must not stop the others, nor the scene events.
+      await this.gladys
+        .publishNowPlaying(ids.device, snapshot, { featureExternalIds: nowPlayingFeatureIds(ids) })
+        .catch((err) =>
+          logger.debug(`publishNowPlaying(${player.deviceName}) failed: ${err.message}`),
+        );
+    }
+  }
+
+  /**
+   * Players added in Gladys but not connected since the integration started
+   * (a restart while one was playing): published idle once, so the Music
+   * widget does not show a track forever.
+   */
+  async publishAbsentPlayersIdle() {
+    if (typeof this.gladys.getDevices !== 'function') {
+      return;
+    }
+    const devices = await this.gladys.getDevices().catch(() => []);
+    for (const device of Array.isArray(devices) ? devices : []) {
+      const key = extractPlayerKey(device?.external_id ?? '');
+      if (!key || this.players.has(key)) {
+        continue;
+      }
+      const ids = playerExternalIds(this.gladys, key);
+      await this.gladys
+        .publishNowPlaying(
+          ids.device,
+          nowPlayingOf(null, () => null),
+          {
+            featureExternalIds: nowPlayingFeatureIds(ids),
+          },
+        )
+        .catch((err) => logger.debug(`publishNowPlaying(${key}) failed: ${err.message}`));
     }
   }
 
@@ -505,6 +537,7 @@ export class MediaMonitor {
       await this.api.sendPlaystate(session.sessionId, PLAYER_PLAYSTATE_COMMANDS[key]);
     } else if (key === PLAYER_FEATURE.VOLUME) {
       // Confirmed by the app's next report (the feature has feedback).
+      this.assertAccepts(session, 'SetVolume');
       const volume = Math.max(0, Math.min(100, Math.round(Number(value))));
       await this.api.sendGeneralCommand(session.sessionId, 'SetVolume', { Volume: String(volume) });
     } else if (key === PLAYER_FEATURE.MUTE) {
@@ -515,6 +548,7 @@ export class MediaMonitor {
         feature?.category === DEVICE_FEATURE_CATEGORIES.TELEVISION
           ? !session.muted
           : Number(value) === 1;
+      this.assertAccepts(session, muted ? 'Mute' : 'Unmute');
       await this.api.sendGeneralCommand(session.sessionId, muted ? 'Mute' : 'Unmute');
     } else {
       throw new Error(`No command handler for ${ids.feature(key)}`);
@@ -524,6 +558,18 @@ export class MediaMonitor {
     // The socket pushes the new state as soon as the app reports it; the
     // refresh covers a server whose socket is down.
     this.scheduleSessionRefresh(1_500);
+  }
+
+  /**
+   * Refuse a general command the app did not declare (an app declaring
+   * nothing gets everything: older servers send no list).
+   * @param {object} session
+   * @param {string} command
+   */
+  assertAccepts(session, command) {
+    if (session.supportedCommands.length > 0 && !session.supportedCommands.includes(command)) {
+      throw localizedError('notSupported', this.config.language, session.deviceName);
+    }
   }
 
   /**
@@ -567,6 +613,9 @@ export class MediaMonitor {
         SeekPositionTicks: Math.round(value) * TICKS_PER_SECOND,
       });
     } else if (key === PLAYER_FEATURE.SHUFFLE) {
+      if (value !== 0 && value !== 1) {
+        refuse('badValue');
+      }
       if (!accepts('SetShuffleQueue')) {
         refuse('noShuffle');
       }
