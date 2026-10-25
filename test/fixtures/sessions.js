@@ -98,3 +98,61 @@ export function ownSession() {
     PlayState: {},
   };
 }
+
+export const WEB_DEVICE_ID = 'TW96aWxsYS81LjAgKFgxMTsgTGludXggeDg2XzY0KSBIZWFkbGVzc0Nocm9tZQ==';
+
+/**
+ * jellyfin-web (Chrome) playing a track, as Jellyfin 12.2 reports it
+ * (trimmed: the commands an app declares, the play state, the item).
+ */
+export function webMusicSession(overrides = {}) {
+  return {
+    Id: 'c563a9ad26baf4ad7f14203b5a89951f',
+    UserId: '8a5a9bd4ba2a40f197c74f8ba411b90e',
+    UserName: 'bench',
+    Client: 'Jellyfin Web',
+    DeviceName: 'Chrome',
+    DeviceId: WEB_DEVICE_ID,
+    SupportsRemoteControl: true,
+    SupportsMediaControl: true,
+    SupportedCommands: [
+      'Mute',
+      'Unmute',
+      'ToggleMute',
+      'SetVolume',
+      'DisplayMessage',
+      'SetRepeatMode',
+      'SetShuffleQueue',
+      'PlayMediaSource',
+    ],
+    PlayableMediaTypes: ['Audio', 'Video'],
+    PlayState: {
+      PositionTicks: 32_188_640,
+      CanSeek: true,
+      IsPaused: false,
+      IsMuted: true,
+      VolumeLevel: 100,
+      MediaSourceId: '6a96a19ae4de2882eff18700da6bdb34',
+      PlayMethod: 'DirectPlay',
+      RepeatMode: 'RepeatNone',
+      PlaybackOrder: 'Default',
+    },
+    NowPlayingItem: {
+      Name: 'Feeling Good',
+      Id: '6a96a19ae4de2882eff18700da6bdb34',
+      Type: 'Audio',
+      MediaType: 'Audio',
+      RunTimeTicks: 400_000_000,
+      ProductionYear: 2020,
+      IndexNumber: 1,
+      Artists: ['Nina Pulse'],
+      Album: 'Pastel Noise',
+      AlbumId: '2db65fbcc73067a649fdb580d543a502',
+      AlbumPrimaryImageTag: 'c04940b9d225b1e3f865790c837205b7',
+      AlbumArtist: 'Nina Pulse',
+      ImageTags: {},
+      BackdropImageTags: [],
+    },
+    ...overrides,
+  };
+}

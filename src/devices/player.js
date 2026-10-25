@@ -8,18 +8,30 @@
 // TELEVISION push buttons MUSIC lacks (stop, seek back/forward):
 //
 //   controls: play, pause, stop, previous, next, rewind, forward, volume, mute
-//   sensors : playback state (0/1), now playing title, remaining minutes,
-//             "in intro" and "in credits" binary markers (automation-friendly:
-//             bring the lights back up when the credits start rolling).
+//   sensors : now playing title, remaining minutes, "in intro" and "in
+//             credits" binary markers (automation-friendly: bring the lights
+//             back up when the credits start rolling).
+//
+// Gladys 5.3 music player (capabilities/music.md): the playback state is
+// writable (0 pause, 1 play, 2 stop), and the "now playing" features title,
+// artist, album, artwork, duration, position (writable: a seek), shuffle and
+// repeat are published by `publishNowPlaying` with `nowPlayingOf()` below.
+// The external ids of the features published before 5.3 never change:
+// `playback-state` (passed through `featureExternalIds`), `volume` and `mute`
+// (converted from television/volume_mute to music/mute by "Update" in
+// Discover). The new ones follow the SDK's `${device}:${type}` convention.
 // -----------------------------------------------------------------------------
 
 import {
   DEVICE_FEATURE_CATEGORIES,
   DEVICE_FEATURE_TYPES,
   DEVICE_FEATURE_UNITS,
+  MUSIC_PLAYBACK_STATE,
+  MUSIC_REPEAT_MODE,
 } from '@gladysassistant/integration-sdk';
 import { texts } from '../i18n.js';
-import { SERVER_LABEL } from '../media/api.js';
+import { SERVER_LABEL, TICKS_PER_SECOND } from '../media/api.js';
+import { REPEAT_MODES } from '../media/sessions.js';
 
 const DEVICE_TYPE = 'player';
 
@@ -38,7 +50,38 @@ export const PLAYER_FEATURE = {
   REMAINING: 'remaining',
   IN_INTRO: 'intro',
   IN_CREDITS: 'credits',
+  // Gladys 5.3: keys equal to the music types (`${device}:${type}`).
+  TITLE: 'title',
+  ARTIST: 'artist',
+  ALBUM: 'album',
+  ARTWORK: 'artwork',
+  DURATION: 'duration',
+  POSITION: 'position',
+  SHUFFLE: 'shuffle',
+  REPEAT: 'repeat',
 };
+
+/** Upper bound of the duration and position features (seconds). */
+export const MAX_SECONDS = 86_400;
+
+/** Repeat mode of the server -> MUSIC_REPEAT_MODE, and back. */
+export const REPEAT_TO_GLADYS = {
+  RepeatNone: MUSIC_REPEAT_MODE.OFF,
+  RepeatAll: MUSIC_REPEAT_MODE.ALL,
+  RepeatOne: MUSIC_REPEAT_MODE.ONE,
+};
+export const REPEAT_FROM_GLADYS = Object.fromEntries(
+  REPEAT_MODES.map((mode) => [REPEAT_TO_GLADYS[mode], mode]),
+);
+
+/**
+ * `featureExternalIds` of publishNowPlaying: the playback state kept its
+ * pre-5.3 id; every other type follows `${device}:${type}`.
+ * @param {{ feature: (key: string) => string }} ids - The player's external ids.
+ */
+export function nowPlayingFeatureIds(ids) {
+  return { playback_state: ids.feature(PLAYER_FEATURE.PLAYBACK_STATE) };
+}
 
 /**
  * Push-button features -> playstate command of the server
@@ -135,6 +178,20 @@ export function buildPlayerDevice(gladys, kind, player, language) {
     ...extra,
   });
 
+  // A writable music feature: the player confirms every write (has_feedback).
+  const control = (key, name, type, max, extra = {}) => ({
+    name,
+    external_id: ids.feature(key),
+    category: DEVICE_FEATURE_CATEGORIES.MUSIC,
+    type,
+    min: 0,
+    max,
+    read_only: false,
+    has_feedback: true,
+    keep_history: false,
+    ...extra,
+  });
+
   const { MUSIC, TELEVISION } = DEVICE_FEATURE_TYPES;
   const C = DEVICE_FEATURE_CATEGORIES;
 
@@ -161,18 +218,25 @@ export function buildPlayerDevice(gladys, kind, player, language) {
         has_feedback: true,
         keep_history: false,
       },
-      {
-        name: t.mute,
-        external_id: ids.feature(PLAYER_FEATURE.MUTE),
-        category: C.TELEVISION,
-        type: TELEVISION.VOLUME_MUTE,
-        min: 0,
-        max: 1,
-        read_only: false,
-        has_feedback: true,
-        keep_history: false,
-      },
-      sensor(PLAYER_FEATURE.PLAYBACK_STATE, t.playbackState, C.MUSIC, MUSIC.PLAYBACK_STATE),
+      // television/volume_mute before 0.4: same id, converted by "Update".
+      control(PLAYER_FEATURE.MUTE, t.mute, MUSIC.MUTE, 1),
+      // Read-only 0/1 before 0.4: same id, now writable (2 = stop).
+      control(PLAYER_FEATURE.PLAYBACK_STATE, t.playbackState, MUSIC.PLAYBACK_STATE, 2),
+      // min/max are meaningless for a text state but the Gladys device model
+      // requires them on every feature (NOT NULL columns).
+      sensor(PLAYER_FEATURE.TITLE, t.title, C.MUSIC, MUSIC.TITLE, { max: 0 }),
+      sensor(PLAYER_FEATURE.ARTIST, t.artist, C.MUSIC, MUSIC.ARTIST, { max: 0 }),
+      sensor(PLAYER_FEATURE.ALBUM, t.albumName, C.MUSIC, MUSIC.ALBUM, { max: 0 }),
+      sensor(PLAYER_FEATURE.ARTWORK, t.artwork, C.MUSIC, MUSIC.ARTWORK, { max: 0 }),
+      sensor(PLAYER_FEATURE.DURATION, t.duration, C.MUSIC, MUSIC.DURATION, {
+        unit: DEVICE_FEATURE_UNITS.SECONDS,
+        max: MAX_SECONDS,
+      }),
+      control(PLAYER_FEATURE.POSITION, t.position, MUSIC.POSITION, MAX_SECONDS, {
+        unit: DEVICE_FEATURE_UNITS.SECONDS,
+      }),
+      control(PLAYER_FEATURE.SHUFFLE, t.shuffle, MUSIC.SHUFFLE, 1),
+      control(PLAYER_FEATURE.REPEAT, t.repeat, MUSIC.REPEAT, MUSIC_REPEAT_MODE.ONE),
       // min/max are meaningless for a text state but the Gladys device model
       // requires them on every feature (NOT NULL columns).
       sensor(PLAYER_FEATURE.NOW_PLAYING, t.nowPlaying, C.TEXT, DEVICE_FEATURE_TYPES.TEXT.TEXT),
@@ -190,4 +254,73 @@ export function buildPlayerDevice(gladys, kind, player, language) {
       sensor(PLAYER_FEATURE.IN_CREDITS, t.inCredits, C.INPUT, DEVICE_FEATURE_TYPES.INPUT.BINARY),
     ],
   };
+}
+
+const seconds = (ticks) => Math.max(0, Math.floor((Number(ticks) || 0) / TICKS_PER_SECOND));
+
+/**
+ * Title, artist and album lines of an item, whatever its kind: a track
+ * (title / artists / album), an episode (title / series / season), a movie
+ * or a channel (its name alone).
+ * @param {ReturnType<import('../media/sessions.js').normalizeItem>} item
+ */
+export function describeItem(item) {
+  if (item.type === 'Episode') {
+    return { title: item.name, artist: item.seriesName, album: item.seasonName };
+  }
+  const artists = item.artists.length > 0 ? item.artists.join(', ') : item.albumArtist;
+  return { title: item.name, artist: artists, album: item.album };
+}
+
+/**
+ * The snapshot given to publishNowPlaying (Gladys 5.3). Nothing loaded, or
+ * the player gone: IDLE and the texts cleared explicitly (an absent key means
+ * "unchanged"). Shuffle, repeat, volume and mute only when the app reports
+ * them. The position is the server's (Jellyfin extrapolates it between two
+ * reports of the app): the SDK republishes it on a state or title change, or
+ * a drift of more than 3 s — never every second.
+ * @param {object|null} session - Normalized session (the state expected after
+ *   a command applied, see MediaMonitor.effective).
+ * @param {(item: object) => string|null} artworkUrl
+ */
+export function nowPlayingOf(session, artworkUrl) {
+  const item = session?.item ?? null;
+  if (!item) {
+    const snapshot = {
+      playback_state: MUSIC_PLAYBACK_STATE.IDLE,
+      title: '',
+      artist: '',
+      album: '',
+      artwork_url: null,
+      duration: 0,
+      position: 0,
+    };
+    return session ? { ...snapshot, ...audioOf(session) } : snapshot;
+  }
+  return {
+    playback_state:
+      session.state === 'paused' ? MUSIC_PLAYBACK_STATE.PAUSED : MUSIC_PLAYBACK_STATE.PLAYING,
+    ...describeItem(item),
+    artwork_url: artworkUrl(item),
+    // 0 for live TV: the music box shows "Live".
+    duration: Math.min(MAX_SECONDS, seconds(item.runTimeTicks)),
+    position: seconds(session.positionTicks),
+    ...audioOf(session),
+  };
+}
+
+/** Shuffle, repeat, volume and mute of a session, when the app reports them. */
+function audioOf(session) {
+  const values = {};
+  if (session.shuffle !== null && session.shuffle !== undefined) {
+    values.shuffle = session.shuffle ? 1 : 0;
+  }
+  if (session.repeat) {
+    values.repeat = REPEAT_TO_GLADYS[session.repeat];
+  }
+  if (session.volume !== null && session.volume !== undefined) {
+    values.volume = session.volume;
+    values.mute = session.muted ? 1 : 0;
+  }
+  return values;
 }

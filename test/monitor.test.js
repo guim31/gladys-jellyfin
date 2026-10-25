@@ -117,7 +117,7 @@ test('playback states are published, then only what changes', async () => {
 
   fake.sessions = [idleTvSession()];
   await monitor.refreshSessions();
-  assert.equal(gladys.lastState(`${TV}:playback-state`), 0);
+  assert.equal(gladys.lastState(`${TV}:playback-state`), 2, 'nothing loaded: IDLE (Gladys 5.3)');
   assert.equal(gladys.lastState(`${TV}:remaining`), 0);
   assert.equal(gladys.lastText(`${TV}:now-playing`), 'Rien en lecture');
   assert.equal(gladys.lastState(':active-streams'), 0);
@@ -128,7 +128,9 @@ test('a player that disconnects is published idle', async () => {
   await monitor.init();
   fake.sessions = [];
   await monitor.refreshSessions();
-  assert.equal(gladys.lastState(`${TV}:playback-state`), 0);
+  assert.equal(gladys.lastState(`${TV}:playback-state`), 2);
+  assert.equal(gladys.lastText(`${TV}:title`), '', 'the texts are cleared explicitly');
+  assert.equal(gladys.lastText(`${TV}:artwork`), '');
   assert.equal(monitor.players.size, 1, 'a known player stays known');
 });
 
@@ -172,7 +174,7 @@ test('a new player is reported so the caller republishes the devices', async () 
   assert.equal(await monitor.applySessions([phoneEpisodeSession()]), false);
 });
 
-test('commands: playstate, volume, mute toggle from the reported state', async () => {
+test('commands: playstate, volume, mute', async () => {
   const { gladys, monitor, calls } = createMonitor();
   await monitor.init();
   const device = { external_id: TV };
@@ -200,18 +202,27 @@ test('commands: playstate, volume, mute toggle from the reported state', async (
     ['command', 'session-tv-1', 'SetVolume', { Volume: '100' }],
     ['command', 'session-tv-1', 'Mute', undefined],
   ]);
-  assert.equal(gladys.lastState(`${TV}:volume`), 100);
-  assert.equal(gladys.lastState(`${TV}:mute`), 1);
+  // Volume and mute have feedback: the app's next report confirms them.
+  assert.equal(gladys.lastState(`${TV}:volume`), 80);
 });
 
-test('mute unmutes a muted player', async () => {
+test('mute: the wanted state, a toggle while the feature is the pre-5.3 button', async () => {
   const { monitor, calls } = createMonitor({
     sessions: [tvSession({ PlayState: { IsMuted: true, IsPaused: false, VolumeLevel: 10 } })],
   });
   await monitor.init();
-  await monitor.handleSetValue({ external_id: TV }, { external_id: `${TV}:mute` }, 1);
+  const device = { external_id: TV };
+  const external_id = `${TV}:mute`;
+  // television/volume_mute, not updated yet in Discover: always sends 1.
+  await monitor.handleSetValue(device, { external_id, category: 'television' }, 1);
+  // music/mute: 0 unmutes, 1 mutes, whatever the reported state.
+  await monitor.handleSetValue(device, { external_id, category: 'music' }, 1);
+  await monitor.handleSetValue(device, { external_id, category: 'music' }, 0);
   monitor.stop();
-  assert.deepEqual(calls[0], ['command', 'session-tv-1', 'Unmute', undefined]);
+  assert.deepEqual(
+    calls.map((call) => call[2]),
+    ['Unmute', 'Mute', 'Unmute'],
+  );
 });
 
 test('a command to a disconnected player explains what to do', async () => {
@@ -313,6 +324,7 @@ test('a device created in Gladys gets its states again', async () => {
   await monitor.init();
   gladys.reset();
   monitor.resetPublicationCache(TV);
+  gladys.forgetPublishedStates(TV); // done by the SDK on onDeviceCreated/Updated
   await monitor.refreshSessions();
   assert.equal(gladys.lastState(`${TV}:playback-state`), 1);
   assert.equal(gladys.lastState(':active-streams'), undefined, 'other devices untouched');

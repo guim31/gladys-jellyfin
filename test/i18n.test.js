@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { LANGUAGES, MESSAGES, TEXTS } from '../src/i18n.js';
+import { ERRORS, LANGUAGES, MESSAGES, TEXTS, localizedError } from '../src/i18n.js';
 
 const EXPECTED = ['de', 'en', 'es', 'fr'];
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -133,6 +133,15 @@ test('every message sent to Gladys has en, fr, de and es', () => {
         : entry;
     checkLocalized(value, `MESSAGES.${key}`, 400);
   }
+});
+
+test('every error of the music player has en, fr, de and es', () => {
+  assert.ok(Object.keys(ERRORS).length > 0);
+  for (const [key, entry] of Object.entries(ERRORS)) {
+    checkLocalized(entry('Living room TV'), `ERRORS.${key}`, 200);
+  }
+  assert.match(localizedError('nothingLoaded', 'de', 'TV').message, /^Auf TV ist nichts geladen/);
+  assert.match(localizedError('badValue', 'xx').message, /not accepted/, 'English by default');
 });
 
 test('no localized object is written outside src/i18n.js', async () => {
