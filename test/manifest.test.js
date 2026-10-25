@@ -100,7 +100,7 @@ test('store constraints: descriptions, versions, image, labels', () => {
   }
   assert.equal(manifest.version, packageJson.version, 'manifest and package versions');
   assert.ok(manifest.docker_image.endsWith(`:${manifest.version}`), 'image tag = version');
-  assert.match(manifest.gladys_version, />=\s*5\.1\.0/, 'widgets and scene declarations need 5.1');
+  assert.match(manifest.gladys_version, />=\s*5\.3\.0/, 'the music field needs 5.3');
   for (const widget of manifest.widgets) {
     for (const text of Object.values(widget.label)) {
       assert.ok(text.length >= 3 && text.length <= 30, `widget label "${text}"`);

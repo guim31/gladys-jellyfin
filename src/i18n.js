@@ -25,6 +25,17 @@ export const TEXTS = {
     remaining: 'Remaining time',
     inIntro: 'In intro',
     inCredits: 'In credits',
+    title: 'Title',
+    artist: 'Artist',
+    albumName: 'Album',
+    artwork: 'Artwork',
+    duration: 'Duration',
+    position: 'Position',
+    shuffle: 'Shuffle',
+    repeat: 'Repeat',
+    folderAlbums: 'Albums',
+    folderArtists: 'Artists',
+    folderPlaylists: 'Playlists',
     activeStreams: 'Active streams',
     transcodes: 'Transcoding streams',
     episodes: 'episodes',
@@ -60,6 +71,17 @@ export const TEXTS = {
     remaining: 'Temps restant',
     inIntro: "Pendant l'intro",
     inCredits: 'Pendant le générique',
+    title: 'Titre',
+    artist: 'Artiste',
+    albumName: 'Album',
+    artwork: 'Pochette',
+    duration: 'Durée',
+    position: 'Position',
+    shuffle: 'Aléatoire',
+    repeat: 'Répétition',
+    folderAlbums: 'Albums',
+    folderArtists: 'Artistes',
+    folderPlaylists: 'Listes de lecture',
     activeStreams: 'Lectures en cours',
     transcodes: 'Transcodages en cours',
     episodes: 'épisodes',
@@ -95,6 +117,17 @@ export const TEXTS = {
     remaining: 'Restzeit',
     inIntro: 'Im Intro',
     inCredits: 'Im Abspann',
+    title: 'Titel',
+    artist: 'Interpret',
+    albumName: 'Album',
+    artwork: 'Cover',
+    duration: 'Dauer',
+    position: 'Position',
+    shuffle: 'Zufallswiedergabe',
+    repeat: 'Wiederholen',
+    folderAlbums: 'Alben',
+    folderArtists: 'Interpreten',
+    folderPlaylists: 'Wiedergabelisten',
     activeStreams: 'Aktive Wiedergaben',
     transcodes: 'Laufende Transkodierungen',
     episodes: 'Episoden',
@@ -130,6 +163,17 @@ export const TEXTS = {
     remaining: 'Tiempo restante',
     inIntro: 'Durante la intro',
     inCredits: 'Durante los créditos',
+    title: 'Título',
+    artist: 'Artista',
+    albumName: 'Álbum',
+    artwork: 'Carátula',
+    duration: 'Duración',
+    position: 'Posición',
+    shuffle: 'Aleatorio',
+    repeat: 'Repetir',
+    folderAlbums: 'Álbumes',
+    folderArtists: 'Artistas',
+    folderPlaylists: 'Listas de reproducción',
     activeStreams: 'Reproducciones en curso',
     transcodes: 'Transcodificaciones en curso',
     episodes: 'episodios',
@@ -224,3 +268,87 @@ export const MESSAGES = {
     es: `Abrir en ${app}`,
   }),
 };
+
+/**
+ * Errors of the Gladys 5.3 music player (commands, music panel, scene
+ * action), shown to the user: in the language of the `language` setting.
+ * Functions take the name of the player.
+ */
+export const ERRORS = {
+  nothingLoaded: (player) => ({
+    en: `Nothing is loaded on ${player}: choose something to play first.`,
+    fr: `Rien n'est chargé sur ${player} : choisissez d'abord quoi lire.`,
+    de: `Auf ${player} ist nichts geladen: wähle zuerst etwas zum Abspielen.`,
+    es: `No hay nada cargado en ${player}: elija primero qué reproducir.`,
+  }),
+  cannotSeek: (player) => ({
+    en: `${player} cannot move within this media.`,
+    fr: `${player} ne peut pas se déplacer dans ce média.`,
+    de: `${player} kann in diesem Medium nicht springen.`,
+    es: `${player} no puede desplazarse en este contenido.`,
+  }),
+  noShuffle: (player) => ({
+    en: `The app of ${player} does not accept shuffle from a remote.`,
+    fr: `L'application de ${player} n'accepte pas l'aléatoire à distance.`,
+    de: `Die App von ${player} nimmt keine Zufallswiedergabe aus der Ferne an.`,
+    es: `La aplicación de ${player} no acepta el modo aleatorio a distancia.`,
+  }),
+  noRepeat: (player) => ({
+    en: `The app of ${player} does not accept repeat from a remote.`,
+    fr: `L'application de ${player} n'accepte pas la répétition à distance.`,
+    de: `Die App von ${player} nimmt keine Wiederholung aus der Ferne an.`,
+    es: `La aplicación de ${player} no acepta la repetición a distancia.`,
+  }),
+  notRemote: (player) => ({
+    en: `${player} cannot be controlled remotely: open the app on it, signed in.`,
+    fr: `${player} ne se pilote pas à distance : ouvrez l'application dessus, connectée.`,
+    de: `${player} lässt sich nicht fernsteuern: öffne die App darauf und melde dich an.`,
+    es: `${player} no se puede controlar a distancia: abra la aplicación en él, con sesión iniciada.`,
+  }),
+  notPlayable: () => ({
+    en: 'Open this folder and choose what to play in it.',
+    fr: 'Ouvrez ce dossier et choisissez ce qu’il faut y lire.',
+    de: 'Öffne diesen Ordner und wähle darin aus, was abgespielt werden soll.',
+    es: 'Abra esta carpeta y elija qué reproducir en ella.',
+  }),
+  notBrowsable: () => ({
+    en: 'This item cannot be opened.',
+    fr: 'Cet élément ne s’ouvre pas.',
+    de: 'Dieses Element lässt sich nicht öffnen.',
+    es: 'Este elemento no se puede abrir.',
+  }),
+  emptyMedia: () => ({
+    en: 'Nothing to play in this item.',
+    fr: 'Rien à lire dans cet élément.',
+    de: 'In diesem Element gibt es nichts abzuspielen.',
+    es: 'No hay nada que reproducir en este elemento.',
+  }),
+  notSupported: (player) => ({
+    en: `The app of ${player} does not accept this command from a remote.`,
+    fr: `L'application de ${player} n'accepte pas cette commande à distance.`,
+    de: `Die App von ${player} nimmt diesen Befehl nicht aus der Ferne an.`,
+    es: `La aplicación de ${player} no acepta este comando a distancia.`,
+  }),
+  gone: () => ({
+    en: 'This item is no longer in the library.',
+    fr: "Cet élément n'est plus dans la bibliothèque.",
+    de: 'Dieses Element ist nicht mehr in der Bibliothek.',
+    es: 'Este elemento ya no está en la biblioteca.',
+  }),
+  badValue: () => ({
+    en: 'This value is not accepted.',
+    fr: "Cette valeur n'est pas acceptée.",
+    de: 'Dieser Wert wird nicht akzeptiert.',
+    es: 'Este valor no se acepta.',
+  }),
+};
+
+/**
+ * An Error carrying a localized message of ERRORS.
+ * @param {keyof typeof ERRORS} key
+ * @param {string} language
+ * @param {string} [player]
+ */
+export function localizedError(key, language, player = '') {
+  return new Error(ERRORS[key](player)[normalizeLanguage(language)]);
+}

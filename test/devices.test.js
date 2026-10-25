@@ -108,7 +108,29 @@ test('player device: controls, sensors, localized names', () => {
   assert.equal(byKey.volume.min, 0);
   assert.equal(byKey.volume.max, 100);
   assert.equal(byKey.volume.read_only, false);
-  assert.equal(byKey['playback-state'].read_only, true);
+  // Gladys 5.3: the playback state became writable (2 = stop), same id.
+  assert.equal(byKey['playback-state'].category, 'music');
+  assert.equal(byKey['playback-state'].type, 'playback_state');
+  assert.equal(byKey['playback-state'].read_only, false);
+  assert.equal(byKey['playback-state'].has_feedback, true);
+  assert.equal(byKey['playback-state'].max, 2);
+  // mute converted from television/volume_mute to music/mute, same id.
+  assert.deepEqual([byKey.mute.category, byKey.mute.type], ['music', 'mute']);
+  for (const key of ['title', 'artist', 'album', 'artwork']) {
+    assert.deepEqual([byKey[key].category, byKey[key].type], ['music', key]);
+    assert.equal(byKey[key].read_only, true);
+    assert.deepEqual([byKey[key].min, byKey[key].max], [0, 0]);
+  }
+  assert.equal(byKey.duration.unit, 'seconds');
+  assert.equal(byKey.duration.read_only, true);
+  assert.equal(byKey.position.unit, 'seconds');
+  for (const key of ['position', 'shuffle', 'repeat', 'mute', 'volume', 'playback-state']) {
+    assert.equal(byKey[key].read_only, false, key);
+    assert.equal(byKey[key].has_feedback, true, `${key}: every writable music feature confirms`);
+  }
+  assert.equal(byKey.repeat.max, 2);
+  assert.equal(byKey.album.name, 'Album');
+  assert.equal(byKey.artwork.name, 'Pochette');
   assert.equal(byKey.remaining.unit, 'minutes');
   assert.equal(buildPlayerDevice(gladys, 'jellyfin', player, 'en').features[0].name, 'Play');
 });

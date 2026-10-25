@@ -6,11 +6,19 @@
 //   - publishState / publishStates   -> record calls so tests can assert them
 //   - publishSceneEvent              -> record calls so tests can assert them
 //   - requestWidgetRefresh           -> record calls so tests can assert them
+//   - publishNowPlaying              -> the SDK's per-device diff (without the
+//                                       position extrapolation), recorded as
+//                                       states and texts like the others
 // This lets us test the wiring logic (discovery payloads, dispatch, state
 // publication, scene events) without a running Gladys server.
 // -----------------------------------------------------------------------------
 
+import { artworkKey } from '@gladysassistant/integration-sdk';
+
+const STRING_TYPES = ['title', 'artist', 'album', 'artwork'];
+
 export function createFakeGladys() {
+  const nowPlaying = new Map();
   const published = [];
   const textStates = [];
   const sceneEvents = [];
@@ -42,6 +50,30 @@ export function createFakeGladys() {
       for (const s of states) {
         published.push({ featureExternalId: s.device_feature_external_id, state: s.state });
       }
+    },
+
+    async publishNowPlaying(deviceExternalId, values, { featureExternalIds = {} } = {}) {
+      const previous = nowPlaying.get(deviceExternalId) ?? {};
+      const next = { ...previous };
+      for (const [key, raw] of Object.entries(values)) {
+        const type = key === 'artwork_url' ? 'artwork' : key;
+        const value = key === 'artwork_url' ? (raw ? artworkKey(raw) : '') : raw;
+        if (previous[type] === value) {
+          continue;
+        }
+        next[type] = value;
+        const featureExternalId = featureExternalIds[type] ?? `${deviceExternalId}:${type}`;
+        if (STRING_TYPES.includes(type)) {
+          textStates.push({ featureExternalId, text: value });
+        } else {
+          published.push({ featureExternalId, state: value });
+        }
+      }
+      nowPlaying.set(deviceExternalId, next);
+    },
+
+    forgetPublishedStates(externalId) {
+      nowPlaying.delete(externalId);
     },
 
     async publishSceneEvent(key, data) {

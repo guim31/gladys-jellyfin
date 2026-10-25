@@ -2,7 +2,7 @@
 
 Pilotez vos lecteurs Jellyfin et Emby, suivez les lectures et réagissez-y dans vos scènes.
 
-Intégration externe pour [Gladys Assistant](https://gladysassistant.com), bâtie sur le template officiel `GladysAssistant/integration-template-js` (SDK `@gladysassistant/integration-sdk` ^0.15.0, `gladys_version` `>=5.1.0`). Mainteneur : Guilhem (`guim31`).
+Intégration externe pour [Gladys Assistant](https://gladysassistant.com), bâtie sur le template officiel `GladysAssistant/integration-template-js` (SDK `@gladysassistant/integration-sdk` ^0.16.0, `gladys_version` `>=5.3.0`). Mainteneur : Guilhem (`guim31`).
 
 Ce fichier rassemble ce qu'une session de code doit savoir et qui ne se lit pas dans le code : choix de conception, faits vérifiés en réel, pièges déjà payés. Le compléter quand un nouveau piège est découvert.
 
@@ -35,6 +35,40 @@ dans les deux.
   toast, invisible pendant la vidéo dans l'app iOS ; `NextTrack` exige une file de lecture. D'où
   suivant/précédent sur un épisode par `/Shows/{id}/Episodes?StartItemId=&Limit=2` puis PlayNow,
   vérifié sur les trois serveurs.
+
+## Lecteur Musique de Gladys 5.3 (0.4, 25/10/2026)
+
+Chaque lecteur est un lecteur du widget Musique du cœur (`capabilities/music.md`). Code :
+`nowPlayingOf()` de `src/devices/player.js` (instantané donné à `publishNowPlaying`, seul canal des
+fonctionnalités `music`, volume et muet compris), `musicCommand()` de `src/monitor.js`,
+`src/catalog.js` (parcours, recherche, lecture, pochettes), `test/music.test.js`.
+
+- **Ids gardés** : `playback-state` (passé par `featureExternalIds`), `volume`, `mute` (converti
+  de television/volume_mute en music/mute par « Mettre à jour » ; avant, `feature.category` vaut
+  encore `television` et le bouton bascule comme en 0.3). Les nouveaux : `${device}:${type}`.
+- **Vérifié contre Jellyfin 12.2 et un vrai Jellyfin Web** (Chrome headless sur le Beelink, piloté
+  par le protocole DevTools, connecté par `ApiClient.authenticateUserByName`) : lecture, pause,
+  arrêt, saut, aléatoire, répétition, muet, volume, `PlayNext`/`PlayLast`, film. Emby non vérifié
+  pour la 5.3 (shuffle : `ShuffleMode` lu, `SetShuffleQueue` refusé avec un message si l'app ne le
+  déclare pas).
+- Jellyfin 12 **extrapole `PositionTicks`** entre deux rapports de l'app (`LastPlaybackCheckIn`
+  ne bouge pas) : pas de correction à faire. L'aléatoire est `PlayState.PlaybackOrder`
+  (`Default`/`Shuffle`), la répétition `RepeatMode`.
+- **Pas de `queue`** : Jellyfin Web ne publie `NowPlayingQueue` qu'au morceau suivant (périmée
+  après un `PlayNext`, un `PlayNow`), et n'a pas de commande « jouer l'élément n » ; rejouer la
+  file avec `startIndex` remet la répétition à zéro, et quitter l'aléatoire restaure une ancienne
+  file (bug du client). `PlayNext` et `PlayLast` marchent : `append: true`.
+- Les éléments d'une **liste de lecture** ne se lisent qu'au nom d'un utilisateur (`UserId`,
+  sinon `/Items?ParentId=` rend 0 et `/Playlists/{id}/Items` une erreur 500) : catalogue lu au nom
+  de l'utilisateur de la session, sinon du premier administrateur (`/Users`).
+- **Un id inconnu dans `ArtistIds` est ignoré** (toute la bibliothèque revient) : ne passer que
+  des ids lus sur le serveur : un `artist:` est d'abord vérifié par `/Items?Ids=` (une scène garde
+  un id des mois). Un `ParentId` inconnu, lui, rend une 400 : « n'est plus dans la bibliothèque ».
+- Un album, un artiste ou une liste de lecture est **déplié en pistes** (150 au plus, ids dans la
+  query string) : Jellyfin Web déplie un album seul, mais rien ne l'impose aux autres apps.
+- Pochettes : `Images/Primary?maxWidth&maxHeight&format=Jpg` (400 px lecteur, 128 px listes),
+  lues avec la clé par `onMusicGetArtwork` (le gestionnaire par défaut du SDK n'envoie aucune
+  authentification, refusée par Jellyfin 12).
 
 ## Architecture, polling et logs (maintenance SDK 0.15, 13/10/2026)
 

@@ -121,15 +121,20 @@ export function createApp(gladys, options = {}) {
   // The states published while the device did not exist in Gladys were
   // dropped, and the deduplication would never resend them: forget what was
   // published for this device and refresh everything right away.
-  gladys.onDeviceCreated(async (device) => {
-    logger.info(`onDeviceCreated <- ${device.external_id}`);
+  // Same after "Update" in Discover (Gladys 5.3: the new music features of
+  // a player created before 0.4): the SDK forgets its now-playing snapshot
+  // by itself, this forgets ours.
+  const republish = (event) => async (device) => {
+    logger.info(`${event} <- ${device.external_id}`);
     if (!monitor) {
       return;
     }
     monitor.resetPublicationCache(device.external_id);
     monitor.scheduleSessionRefresh();
     await refreshLibraries(monitor);
-  });
+  };
+  gladys.onDeviceCreated(republish('onDeviceCreated'));
+  gladys.onDeviceUpdated(republish('onDeviceUpdated'));
 
   // --- Polling ----------------------------------------------------------------
   // Every device is published with `should_poll: false`: the core never calls
@@ -216,6 +221,21 @@ export function createApp(gladys, options = {}) {
     }
     return monitor.widgetImage(imageKey);
   });
+
+  // --- Gladys 5.3 music panel and `music.play-media` scene action ------------
+  // Manifest `music`: browse, search and append (no queue, see catalog.js).
+  const connected = () => {
+    if (!monitor) {
+      throw new Error(NOT_CONNECTED_ERROR);
+    }
+    return monitor;
+  };
+  gladys.onMusicBrowse(async (device, options) => connected().catalog.browse(device, options));
+  gladys.onMusicSearch(async (device, options) => connected().catalog.search(device, options));
+  gladys.onMusicPlay(async (device, media, mode) => {
+    await userAction(`Play ${media?.id}`, () => monitor.catalog.play(device, media, mode));
+  });
+  gladys.onMusicGetArtwork(async (key) => connected().catalog.artwork(key));
 
   // --- Configuration updated by the user -------------------------------------
   gladys.onConfigUpdated(async (newConfig) => {

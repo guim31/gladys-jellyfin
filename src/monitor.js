@@ -19,8 +19,12 @@
 // session list every time anything changes, most values are unchanged.
 // -----------------------------------------------------------------------------
 
-import { createLogger } from '@gladysassistant/integration-sdk';
-import { MediaServerApi } from './media/api.js';
+import {
+  createLogger,
+  DEVICE_FEATURE_CATEGORIES,
+  MUSIC_PLAYBACK_STATE,
+} from '@gladysassistant/integration-sdk';
+import { MediaServerApi, TICKS_PER_SECOND } from './media/api.js';
 import {
   normalizeSession,
   normalizeItem,
@@ -47,7 +51,11 @@ import {
   playerDeviceName,
   PLAYER_FEATURE,
   PLAYER_PLAYSTATE_COMMANDS,
+  REPEAT_FROM_GLADYS,
+  nowPlayingOf,
+  nowPlayingFeatureIds,
 } from './devices/player.js';
+import { MusicCatalog, ARTWORK_SIZE } from './catalog.js';
 import { diffPlayback, playbackOf, buildEventData } from './scene-events.js';
 import {
   WIDGET,
@@ -56,8 +64,9 @@ import {
   buildLatestContent,
   buildPlayerContent,
   imageKey,
+  artworkOf,
 } from './widgets.js';
-import { texts } from './i18n.js';
+import { texts, localizedError } from './i18n.js';
 
 const logger = createLogger({ name: 'media-monitor' });
 
@@ -90,6 +99,14 @@ export const PLAY_MEDIA_TYPES = {
   playlist: ['Playlist'],
   song: ['Audio'],
 };
+
+/** Features handled by musicCommand (Gladys 5.3). */
+const MUSIC_COMMANDS = new Set([
+  PLAYER_FEATURE.PLAYBACK_STATE,
+  PLAYER_FEATURE.POSITION,
+  PLAYER_FEATURE.SHUFFLE,
+  PLAYER_FEATURE.REPEAT,
+]);
 
 export class MediaMonitor {
   /**
@@ -126,6 +143,10 @@ export class MediaMonitor {
     // False during init(): the players already connected are summed up in
     // the "Connected to" line instead of one line each.
     this.ready = false;
+    /** @type {Map<string, string>} Last state, item and position seen, by player key. */
+    this.positionSamples = new Map();
+    /** The Gladys 5.3 music panel: browse, search, play, artwork. */
+    this.catalog = new MusicCatalog(this);
   }
 
   /**
@@ -144,6 +165,7 @@ export class MediaMonitor {
     };
     this.libraries = await this.api.getLibraries();
     await this.applySessions(await this.api.getSessions());
+    await this.publishAbsentPlayersIdle();
     this.ready = true;
     logger.info(
       `Connected to ${this.label} server "${this.server.name}" (v${this.server.version}): ` +
@@ -221,11 +243,6 @@ export class MediaMonitor {
 
       this.collectIfChanged(
         states,
-        ids.feature(PLAYER_FEATURE.PLAYBACK_STATE),
-        session?.state === 'playing' ? 1 : 0,
-      );
-      this.collectIfChanged(
-        states,
         ids.feature(PLAYER_FEATURE.REMAINING),
         item ? remainingMinutes(session) : 0,
       );
@@ -239,12 +256,6 @@ export class MediaMonitor {
         ids.feature(PLAYER_FEATURE.IN_CREDITS),
         item && isInMarker(markers, 'credits', position) ? 1 : 0,
       );
-      if (session && session.volume !== null) {
-        this.collectIfChanged(states, ids.feature(PLAYER_FEATURE.VOLUME), session.volume);
-      }
-      if (session) {
-        this.collectIfChanged(states, ids.feature(PLAYER_FEATURE.MUTE), session.muted ? 1 : 0);
-      }
       textStates.push([
         ids.feature(PLAYER_FEATURE.NOW_PLAYING),
         item ? truncate(formatTitle(item), MAX_TEXT_LENGTH) : t.idle,
@@ -271,6 +282,67 @@ export class MediaMonitor {
     }
     for (const [featureExternalId, text] of textStates) {
       await this.publishTextIfChanged(featureExternalId, text);
+    }
+    await this.publishNowPlaying();
+  }
+
+  /**
+   * The Gladys 5.3 "now playing" of every player — playback state, title,
+   * artist, album, artwork, duration, position, shuffle, repeat, volume and
+   * mute — through publishNowPlaying, which sends only what changed. The
+   * only channel of these features (never publishStates as well).
+   */
+  async publishNowPlaying() {
+    for (const player of this.players.values()) {
+      const ids = playerExternalIds(this.gladys, player.key);
+      const session = this.effective(player.key);
+      const snapshot = nowPlayingOf(session, (item) =>
+        this.catalog.artworkUrl(artworkOf(item), ARTWORK_SIZE.player),
+      );
+      // A position the server repeats unchanged while the same media keeps
+      // playing is a stale sample (a server that does not extrapolate it
+      // between two reports of the app): leave it out, the SDK and the
+      // dashboard keep extrapolating the last one. Jellyfin 12 moves it at
+      // every push.
+      const sample = `${session?.state}|${session?.item?.id}|${session?.positionTicks}`;
+      if (session?.state === 'playing' && this.positionSamples.get(player.key) === sample) {
+        delete snapshot.position;
+      }
+      this.positionSamples.set(player.key, sample);
+      // One player refused must not stop the others, nor the scene events.
+      await this.gladys
+        .publishNowPlaying(ids.device, snapshot, { featureExternalIds: nowPlayingFeatureIds(ids) })
+        .catch((err) =>
+          logger.debug(`publishNowPlaying(${player.deviceName}) failed: ${err.message}`),
+        );
+    }
+  }
+
+  /**
+   * Players added in Gladys but not connected since the integration started
+   * (a restart while one was playing): published idle once, so the Music
+   * widget does not show a track forever.
+   */
+  async publishAbsentPlayersIdle() {
+    if (typeof this.gladys.getDevices !== 'function') {
+      return;
+    }
+    const devices = await this.gladys.getDevices().catch(() => []);
+    for (const device of Array.isArray(devices) ? devices : []) {
+      const key = extractPlayerKey(device?.external_id ?? '');
+      if (!key || this.players.has(key)) {
+        continue;
+      }
+      const ids = playerExternalIds(this.gladys, key);
+      await this.gladys
+        .publishNowPlaying(
+          ids.device,
+          nowPlayingOf(null, () => null),
+          {
+            featureExternalIds: nowPlayingFeatureIds(ids),
+          },
+        )
+        .catch((err) => logger.debug(`publishNowPlaying(${key}) failed: ${err.message}`));
     }
   }
 
@@ -379,16 +451,47 @@ export class MediaMonitor {
   }
 
   /**
+   * The current session of a player device, or null when it is not
+   * connected. Throws for a device that is not a player.
+   * @param {string} deviceExternalId
+   */
+  playerSession(deviceExternalId) {
+    const key = extractPlayerKey(deviceExternalId ?? '');
+    if (!key) {
+      throw new Error(`Not a player device: ${deviceExternalId}`);
+    }
+    return this.sessions.get(key) ?? null;
+  }
+
+  /**
+   * The session of a connected player that accepts remote control.
+   * @param {string} deviceExternalId
+   */
+  controllableSession(deviceExternalId) {
+    const session = this.sessionOf(deviceExternalId);
+    if (!session.controllable) {
+      throw localizedError('notRemote', this.config.language, session.deviceName);
+    }
+    return session;
+  }
+
+  /** One info line per media started from the music panel or a scene. */
+  logPlay(session, what, mode, count) {
+    logger.info(`Playing ${what} (${mode}, ${count} items) on ${session.deviceName}`);
+    this.scheduleSessionRefresh(2_000);
+  }
+
+  /**
    * Run a user command on a player device.
    * @param {{ external_id: string }} device
-   * @param {{ external_id: string }} feature
+   * @param {{ external_id: string, category?: string }} feature
    * @param {number} value
    */
   async handleSetValue(device, feature, value) {
     const session = this.sessionOf(device.external_id);
     const ids = playerExternalIds(this.gladys, session.key);
     const key = playerFeatureKey(feature.external_id, ids);
-    await this.command(session, key, value);
+    await this.command(session, key, value, feature);
   }
 
   /**
@@ -410,10 +513,13 @@ export class MediaMonitor {
    * @param {object} session - Normalized session of the player.
    * @param {string} key - Feature key (PLAYER_FEATURE).
    * @param {number} value
+   * @param {{ category?: string }} [feature] - The Gladys feature, when known.
    */
-  async command(session, key, value) {
+  async command(session, key, value, feature) {
     const ids = playerExternalIds(this.gladys, session.key);
-    if (key === PLAYER_FEATURE.PLAY) {
+    if (MUSIC_COMMANDS.has(key)) {
+      await this.musicCommand(session, key, Number(value));
+    } else if (key === PLAYER_FEATURE.PLAY) {
       await this.api.sendPlaystate(session.sessionId, 'Unpause');
       this.expect(session.key, 'playing');
     } else if (key === PLAYER_FEATURE.PAUSE) {
@@ -430,15 +536,20 @@ export class MediaMonitor {
     } else if (PLAYER_PLAYSTATE_COMMANDS[key]) {
       await this.api.sendPlaystate(session.sessionId, PLAYER_PLAYSTATE_COMMANDS[key]);
     } else if (key === PLAYER_FEATURE.VOLUME) {
+      // Confirmed by the app's next report (the feature has feedback).
+      this.assertAccepts(session, 'SetVolume');
       const volume = Math.max(0, Math.min(100, Math.round(Number(value))));
       await this.api.sendGeneralCommand(session.sessionId, 'SetVolume', { Volume: String(volume) });
-      await this.publishNow(ids.feature(key), volume);
     } else if (key === PLAYER_FEATURE.MUTE) {
-      // Gladys renders mute as a push button (it always sends 1): the feature
-      // behaves as a TOGGLE of the state the player reports.
-      const muted = !session.muted;
+      // music/mute (0.4): the value is the wanted state. Before "Update" in
+      // Discover, the feature is still the television/volume_mute of 0.3,
+      // a push button that always sends 1: keep it a TOGGLE then.
+      const muted =
+        feature?.category === DEVICE_FEATURE_CATEGORIES.TELEVISION
+          ? !session.muted
+          : Number(value) === 1;
+      this.assertAccepts(session, muted ? 'Mute' : 'Unmute');
       await this.api.sendGeneralCommand(session.sessionId, muted ? 'Mute' : 'Unmute');
-      await this.publishNow(ids.feature(key), muted ? 1 : 0);
     } else {
       throw new Error(`No command handler for ${ids.feature(key)}`);
     }
@@ -447,6 +558,81 @@ export class MediaMonitor {
     // The socket pushes the new state as soon as the app reports it; the
     // refresh covers a server whose socket is down.
     this.scheduleSessionRefresh(1_500);
+  }
+
+  /**
+   * Refuse a general command the app did not declare (an app declaring
+   * nothing gets everything: older servers send no list).
+   * @param {object} session
+   * @param {string} command
+   */
+  assertAccepts(session, command) {
+    if (session.supportedCommands.length > 0 && !session.supportedCommands.includes(command)) {
+      throw localizedError('notSupported', this.config.language, session.deviceName);
+    }
+  }
+
+  /**
+   * The writable music features of Gladys 5.3: playback state (0 pause,
+   * 1 play, 2 stop), position (a seek), shuffle and repeat. Refused with a
+   * clear message when the player cannot do it, never silently ignored.
+   * @param {object} session
+   * @param {string} key
+   * @param {number} value
+   */
+  async musicCommand(session, key, value) {
+    const language = this.config.language;
+    const refuse = (error) => {
+      throw localizedError(error, language, session.deviceName);
+    };
+    const accepts = (command) =>
+      session.supportedCommands.length === 0 || session.supportedCommands.includes(command);
+
+    if (key === PLAYER_FEATURE.PLAYBACK_STATE) {
+      if (value === MUSIC_PLAYBACK_STATE.IDLE) {
+        await this.api.sendPlaystate(session.sessionId, 'Stop');
+        this.expect(session.key, 'idle');
+      } else if (value === MUSIC_PLAYBACK_STATE.PAUSED || value === MUSIC_PLAYBACK_STATE.PLAYING) {
+        if (!session.item) {
+          refuse('nothingLoaded');
+        }
+        const play = value === MUSIC_PLAYBACK_STATE.PLAYING;
+        await this.api.sendPlaystate(session.sessionId, play ? 'Unpause' : 'Pause');
+        this.expect(session.key, play ? 'playing' : 'paused');
+      } else {
+        refuse('badValue');
+      }
+    } else if (key === PLAYER_FEATURE.POSITION) {
+      if (!session.item) {
+        refuse('nothingLoaded');
+      }
+      if (!session.canSeek || !Number.isFinite(value) || value < 0) {
+        refuse(session.canSeek ? 'badValue' : 'cannotSeek');
+      }
+      await this.api.sendPlaystate(session.sessionId, 'Seek', {
+        SeekPositionTicks: Math.round(value) * TICKS_PER_SECOND,
+      });
+    } else if (key === PLAYER_FEATURE.SHUFFLE) {
+      if (value !== 0 && value !== 1) {
+        refuse('badValue');
+      }
+      if (!accepts('SetShuffleQueue')) {
+        refuse('noShuffle');
+      }
+      await this.api.sendGeneralCommand(session.sessionId, 'SetShuffleQueue', {
+        ShuffleMode: value === 1 ? 'Shuffle' : 'Sorted',
+      });
+    } else if (key === PLAYER_FEATURE.REPEAT) {
+      if (!REPEAT_FROM_GLADYS[value]) {
+        refuse('badValue');
+      }
+      if (!accepts('SetRepeatMode')) {
+        refuse('noRepeat');
+      }
+      await this.api.sendGeneralCommand(session.sessionId, 'SetRepeatMode', {
+        RepeatMode: REPEAT_FROM_GLADYS[value],
+      });
+    }
   }
 
   /**
@@ -767,8 +953,10 @@ export class MediaMonitor {
   resetPublicationCache(externalIdPrefix) {
     if (!externalIdPrefix) {
       this.lastPublished.clear();
+      this.positionSamples.clear();
       return;
     }
+    this.positionSamples.delete(extractPlayerKey(externalIdPrefix));
     for (const key of this.lastPublished.keys()) {
       if (key.startsWith(`${externalIdPrefix}:`)) {
         this.lastPublished.delete(key);
@@ -783,12 +971,6 @@ export class MediaMonitor {
     }
     this.lastPublished.set(featureExternalId, value);
     states.push({ device_feature_external_id: featureExternalId, state: value });
-  }
-
-  /** Publish a numeric state right away (command feedback). */
-  async publishNow(featureExternalId, value) {
-    this.lastPublished.set(featureExternalId, value);
-    await this.gladys.publishState(featureExternalId, value);
   }
 
   /** Publish a text state only when it changed. */

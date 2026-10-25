@@ -5,7 +5,7 @@ suivez ce qui se regarde dans la maison et déclenchez des scènes quand une
 lecture démarre, se met en pause ou s'arrête — le classique « lumières
 tamisées quand le film commence ».
 
-Fonctionne avec Jellyfin 10.9 et suivants (vérifié sur 10.11 et 12.1) et
+Fonctionne avec Jellyfin 10.9 et suivants (vérifié sur 10.11, 12.1 et 12.2) et
 avec Emby (vérifié sur 4.10). L'intégration détecte seule le type de
 serveur.
 
@@ -36,11 +36,11 @@ quoi, où », et un compteur par bibliothèque (plus les épisodes des séries e
 les morceaux de musique). Les compteurs se désactivent dans la
 configuration.
 
-**Chaque lecteur** : lecture, pause, stop, précédent, suivant, retour
-arrière, avance rapide, volume, muet, état de lecture, titre en cours, temps
-restant, et deux indicateurs **« pendant l'intro »** et **« pendant le
-générique »**. Les boutons sont compatibles avec le widget **Musique** du
-tableau de bord.
+**Chaque lecteur** : ce qu'il lit (titre, artiste, album, pochette, durée,
+position), lecture, pause, stop, précédent, suivant, retour arrière, avance
+rapide, volume, muet, aléatoire, répétition, état de lecture, un texte « en
+cours de lecture » sur une ligne, temps restant, et deux indicateurs
+**« pendant l'intro »** et **« pendant le générique »**.
 
 Les indicateurs d'intro et de générique ont besoin que le serveur connaisse
 ces passages :
@@ -51,6 +51,41 @@ ces passages :
 - Emby : la détection des intros et génériques d'Emby.
 
 Sans eux, les deux indicateurs restent à 0.
+
+## Lecteur Musique de Gladys 5.3
+
+Ajoutez le widget **Musique** à un tableau de bord et choisissez un lecteur
+Jellyfin ou Emby : il affiche la pochette, le titre, l'artiste et l'album de
+ce qui est lu — pour un épisode, l'épisode, la série et la saison ; pour un
+film, son titre — avec une barre de progression que l'on fait glisser pour
+se déplacer, lecture/pause, précédent, suivant, aléatoire, répétition,
+volume et muet.
+
+La loupe du widget ouvre la **bibliothèque musicale** du serveur : albums,
+artistes et listes de lecture (celles de l'utilisateur connecté sur le
+lecteur), et une recherche. Un appui lance un morceau, un album, un artiste
+ou une liste de lecture sur le lecteur ; l'autre geste du panneau l'ajoute
+après le morceau en cours ou à la fin de la file. Le même sélecteur sert
+l'action de scène **Lancer une musique sur une enceinte** de Gladys. La file
+de lecture elle-même n'est pas affichée : les applications Jellyfin la
+signalent en retard et ne savent pas sauter à l'un de ses éléments.
+
+Bon à savoir :
+
+- pour lancer une lecture, le lecteur doit être **connecté** au serveur et
+  accepter le contrôle à distance (applications TV, client web) ; la
+  navigation, elle, fonctionne toujours ;
+- l'**état de lecture** vaut 0 (pause), 1 (lecture) ou 2 (arrêté : rien en
+  lecture). Avant la version 0.4, un lecteur arrêté valait 0 ;
+- **un lecteur ajouté avant la version 0.4** : ouvrez l'onglet
+  **Découverte** de l'intégration et cliquez sur **Mettre à jour** sur ce
+  lecteur. Il garde son nom, sa pièce, ses scènes et ses tableaux de bord, et
+  reçoit les nouvelles fonctionnalités. D'ici là, le bouton muet bascule
+  comme avant ;
+- l'aléatoire et la répétition dépendent de l'application (Jellyfin Web et
+  les applications TV les acceptent) ; l'intégration le signale quand une
+  application refuse ;
+- nécessite Gladys 5.3 ou plus récent.
 
 ## Scènes
 
@@ -74,7 +109,14 @@ Deux actions de scène :
 Le lecteur doit être connecté au serveur pour recevoir un message ou une
 lecture.
 
+Gladys 5.3 propose aussi sa propre action **Lancer une musique sur une
+enceinte** : choisissez le lecteur, puis un album, un artiste, une liste de
+lecture ou un morceau dans la bibliothèque.
+
 ## Widgets du tableau de bord
+
+Le widget **Musique** de Gladys vient en premier (voir plus haut).
+L'intégration apporte aussi trois widgets à elle :
 
 - **En cours de lecture** : qui regarde quoi, où, avec les affiches.
 - **Lecteur** : la lecture en cours en télécommande — la jaquette (ou
@@ -103,6 +145,14 @@ lecture.
 - **Le bouton ne change pas tout de suite d'état** : les boutons du widget
   « Lecteur » affichent l'état attendu dès la commande envoyée, puis
   l'application le confirme (certaines mettent quelques secondes).
+- **Le widget Musique dit que le lecteur n'a pas répondu** : l'application
+  n'a pas confirmé la commande dans les 15 secondes. Certaines applications
+  ne signalent le volume, le muet, l'aléatoire et la répétition que toutes les
+  quelques secondes ; une application qui n'accepte pas le contrôle à
+  distance ne confirme jamais.
+- **Les nouvelles fonctionnalités manquent sur un lecteur** : cliquez sur
+  **Mettre à jour** sur ce lecteur dans l'onglet Découverte de l'intégration
+  (lecteurs ajoutés avant la version 0.4).
 - **La mise à jour est lente** : l'intégration suit les lectures en temps
   réel par WebSocket. Si votre reverse proxy ne relaie pas les WebSockets,
   elle se replie sur une interrogation toutes les 15 secondes.

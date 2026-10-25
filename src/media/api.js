@@ -266,13 +266,14 @@ export class MediaServerApi {
    * @param {string} itemId
    * @param {'Primary'|'Backdrop'} imageType - Poster / cover, or 16:9 fan art.
    * @param {number} maxWidth
+   * @param {number} [maxHeight]
    * @returns {Promise<Buffer|null>} JPEG bytes, or null when the item has no such image.
    */
-  async getImage(itemId, imageType, maxWidth) {
+  async getImage(itemId, imageType, maxWidth, maxHeight) {
     const path = `/Items/${encodeURIComponent(itemId)}/Images/${imageType}${imageType === 'Backdrop' ? '/0' : ''}`;
     try {
       const { bytes } = await this.request('GET', path, {
-        query: { maxWidth, quality: 80, format: 'Jpg' },
+        query: { maxWidth, maxHeight, quality: 80, format: 'Jpg' },
         binary: true,
       });
       return bytes;
@@ -282,6 +283,35 @@ export class MediaServerApi {
       }
       throw err;
     }
+  }
+
+  /**
+   * Id of the first enabled administrator: the user the music catalog is
+   * read as when the player's session names none (a playlist's items can
+   * only be read on behalf of a user).
+   * @returns {Promise<string|null>}
+   */
+  async getAdminUserId() {
+    const users = await this.request('GET', '/Users');
+    const admin = (Array.isArray(users) ? users : []).find(
+      (user) => user?.Policy?.IsAdministrator && !user.Policy.IsDisabled,
+    );
+    return admin ? String(admin.Id) : null;
+  }
+
+  /**
+   * One page of library items (the music catalog).
+   * @param {Record<string, unknown>} query - `/Items` query (UserId, ParentId,
+   *   IncludeItemTypes, searchTerm, StartIndex, Limit...).
+   * @param {string} [path] - `/Items` by default; `/Artists/AlbumArtists`
+   *   for the album artists.
+   * @returns {Promise<{ items: object[], total: number }>}
+   */
+  async queryItems(query, path = '/Items') {
+    const data = await this.request('GET', path, { query });
+    const items = Array.isArray(data?.Items) ? data.Items : [];
+    const total = Number(data?.TotalRecordCount);
+    return { items, total: Number.isFinite(total) ? total : items.length };
   }
 
   /**

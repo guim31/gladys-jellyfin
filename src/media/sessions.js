@@ -68,10 +68,36 @@ export function normalizeSession(raw) {
     item,
     state: item ? (playState.IsPaused ? 'paused' : 'playing') : 'idle',
     positionTicks: Number(playState.PositionTicks) || 0,
-    volume: Number.isFinite(volume) && playState.VolumeLevel !== null ? volume : null,
+    // Bounded: Gladys refuses a volume outside 0-100 (an app may report more).
+    volume:
+      Number.isFinite(volume) && playState.VolumeLevel !== null
+        ? Math.max(0, Math.min(100, Math.round(volume)))
+        : null,
     muted: playState.IsMuted === true,
     transcoding: playState.PlayMethod === 'Transcode',
+    canSeek: playState.CanSeek !== false,
+    // Repeat and shuffle as the app reports them (Jellyfin: `PlaybackOrder`
+    // since 10.9, older servers and Emby: `ShuffleMode`); null when unknown.
+    repeat: REPEAT_MODES.includes(playState.RepeatMode) ? playState.RepeatMode : null,
+    shuffle: shuffleOf(playState),
+    userId: raw.UserId ? String(raw.UserId) : null,
   };
+}
+
+/** Repeat modes of the remote-control API (`SetRepeatMode`). */
+export const REPEAT_MODES = ['RepeatNone', 'RepeatAll', 'RepeatOne'];
+
+/**
+ * Shuffle state reported by an app: true, false, or null when it says nothing.
+ * @param {object} playState
+ * @returns {boolean|null}
+ */
+function shuffleOf(playState) {
+  const value = playState.PlaybackOrder ?? playState.ShuffleMode;
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value === 'Shuffle';
 }
 
 /**
@@ -90,6 +116,7 @@ export function normalizeItem(raw) {
     seriesName: raw.SeriesName ?? '',
     seriesId: raw.SeriesId ? String(raw.SeriesId) : null,
     seriesImageTag: raw.SeriesPrimaryImageTag ?? null,
+    seasonName: raw.SeasonName ?? '',
     season: Number.isInteger(raw.ParentIndexNumber) ? raw.ParentIndexNumber : null,
     episode: Number.isInteger(raw.IndexNumber) ? raw.IndexNumber : null,
     year: Number.isInteger(raw.ProductionYear) ? raw.ProductionYear : null,
